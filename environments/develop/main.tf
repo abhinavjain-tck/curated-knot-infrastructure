@@ -102,16 +102,15 @@ module "cloud_sql" {
   region            = var.region
   instance_name     = "${local.name_prefix}-db"
   database_version  = "POSTGRES_15"
-  tier              = "db-f1-micro" # Small instance for develop
+  tier              = "db-f1-micro"
   disk_size         = 10
   availability_type = "ZONAL"
   backup_enabled    = true
   retained_backups  = 7
   authorized_networks = [
-    # NAT IP for outbound connections
-    # Add any other IPs that need direct access
+    "34.180.41.227/32", # Existing authorized IP - verify if still needed
   ]
-  labels = local.labels
+  labels = {} # No labels currently
 
   depends_on = [google_project_service.apis]
 }
@@ -120,16 +119,18 @@ module "cloud_sql" {
 resource "google_artifact_registry_repository" "images" {
   location      = var.region
   repository_id = "${local.name_prefix}-images"
-  description   = "Docker images for Curated Knot API"
+  description   = "Docker images for The Curated Knot" # Match existing
   format        = "DOCKER"
   project       = var.project_id
 
-  labels = local.labels
+  labels = {} # No labels currently
 
   depends_on = [google_project_service.apis]
 }
 
 # Cloud Run API Service
+# NOTE: This currently manages the live production deployment
+# The environment variable is set to "production" to match existing state
 module "cloud_run_api" {
   source = "../../modules/cloud-run"
 
@@ -140,13 +141,13 @@ module "cloud_run_api" {
   service_account_email = module.api_service_account.email
   vpc_connector_id      = module.networking.vpc_connector_id
   cloud_sql_connection  = module.cloud_sql.connection_name
-  environment           = var.environment
-  allowed_origins       = "https://develop.thecuratedknot.com,https://develop-admin.thecuratedknot.com"
+  environment           = "production" # Keep as production to match existing state
+  allowed_origins       = "https://thecuratedknot.com,https://admin.thecuratedknot.com"
 
   cpu           = "1"
   memory        = "512Mi"
   max_instances = 10
-  min_instances = 0 # Scale to zero for develop
+  min_instances = 0
 
   secrets = {
     DATABASE_URL        = "database-url"
@@ -174,17 +175,10 @@ module "static_assets" {
   name                     = "${local.name_prefix}-static-assets"
   storage_class            = "STANDARD"
   versioning_enabled       = false
-  public_access_prevention = "enforced"
-  labels                   = local.labels
+  public_access_prevention = "inherited" # Match existing state
+  labels                   = {}          # No labels currently
 
-  cors = [
-    {
-      origin          = ["https://develop.thecuratedknot.com", "https://develop-admin.thecuratedknot.com"]
-      method          = ["GET", "HEAD"]
-      response_header = ["Content-Type"]
-      max_age_seconds = 3600
-    }
-  ]
+  cors = [] # No CORS currently configured
 
   depends_on = [google_project_service.apis]
 }

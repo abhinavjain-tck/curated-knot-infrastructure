@@ -5,10 +5,25 @@ on:
     branches:
       - main
       - develop
+    paths:
+      - 'modules/**'
+      - 'environments/**'
+      - '*.tf'
+      - '.github/workflows/terraform.yml'
   pull_request:
     branches:
       - main
       - develop
+    paths:
+      - 'modules/**'
+      - 'environments/**'
+      - '*.tf'
+      - '.github/workflows/terraform.yml'
+  workflow_dispatch: # Allow manual trigger
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   TF_VERSION: "1.5.7"

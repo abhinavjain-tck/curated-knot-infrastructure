@@ -39,6 +39,12 @@ variable "nat_ip_count" {
   default     = 1
 }
 
+variable "nat_log_filter" {
+  description = "NAT log filter (ALL, ERRORS_ONLY, TRANSLATIONS_ONLY)"
+  type        = string
+  default     = "ALL"
+}
+
 # VPC Connector for Cloud Run
 resource "google_vpc_access_connector" "connector" {
   name          = "vpc-connector"
@@ -80,7 +86,7 @@ resource "google_compute_router_nat" "nat" {
 
   log_config {
     enable = true
-    filter = "ERRORS_ONLY"
+    filter = var.nat_log_filter
   }
 }
 
