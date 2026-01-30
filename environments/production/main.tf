@@ -1,5 +1,5 @@
 # Production Environment - Main Configuration
-# This environment will use a new curated-knot-production GCP project
+# This environment uses the existing curated-knot-prod GCP project
 
 terraform {
   required_version = ">= 1.5.0"
@@ -94,7 +94,7 @@ module "networking" {
   depends_on = [google_project_service.apis]
 }
 
-# Cloud SQL PostgreSQL - Production specs
+# Cloud SQL PostgreSQL
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
@@ -102,15 +102,15 @@ module "cloud_sql" {
   region            = var.region
   instance_name     = "${local.name_prefix}-db"
   database_version  = "POSTGRES_15"
-  tier              = "db-custom-1-3840" # 1 vCPU, 3.75 GB RAM for production
-  disk_size         = 20
-  availability_type = "ZONAL" # Consider REGIONAL for HA in future
+  tier              = "db-f1-micro"
+  disk_size         = 10
+  availability_type = "ZONAL"
   backup_enabled    = true
-  retained_backups  = 14 # Keep more backups in production
+  retained_backups  = 7
   authorized_networks = [
-    # NAT IP for outbound connections
+    "34.180.41.227/32", # Existing authorized IP - verify if still needed
   ]
-  labels = local.labels
+  labels = {} # No labels currently
 
   depends_on = [google_project_service.apis]
 }
@@ -119,16 +119,18 @@ module "cloud_sql" {
 resource "google_artifact_registry_repository" "images" {
   location      = var.region
   repository_id = "${local.name_prefix}-images"
-  description   = "Docker images for Curated Knot API"
+  description   = "Docker images for The Curated Knot" # Match existing
   format        = "DOCKER"
   project       = var.project_id
 
-  labels = local.labels
+  labels = {} # No labels currently
 
   depends_on = [google_project_service.apis]
 }
 
-# Cloud Run API Service - Production specs
+# Cloud Run API Service
+# NOTE: This currently manages the live production deployment
+# The environment variable is set to "production" to match existing state
 module "cloud_run_api" {
   source = "../../modules/cloud-run"
 
@@ -139,13 +141,13 @@ module "cloud_run_api" {
   service_account_email = module.api_service_account.email
   vpc_connector_id      = module.networking.vpc_connector_id
   cloud_sql_connection  = module.cloud_sql.connection_name
-  environment           = var.environment
+  environment           = "production" # Keep as production to match existing state
   allowed_origins       = "https://thecuratedknot.com,https://admin.thecuratedknot.com"
 
   cpu           = "1"
   memory        = "512Mi"
-  max_instances = 20 # Higher limit for production
-  min_instances = 1  # Keep at least 1 instance warm for production
+  max_instances = 10
+  min_instances = 0
 
   secrets = {
     DATABASE_URL        = "database-url"
@@ -170,31 +172,13 @@ module "static_assets" {
 
   project_id               = var.project_id
   location                 = upper(var.region)
-  name                     = "${local.name_prefix}-prod-static-assets"
+  name                     = "${local.name_prefix}-static-assets"
   storage_class            = "STANDARD"
-  versioning_enabled       = true # Enable versioning in production
-  public_access_prevention = "enforced"
-  labels                   = local.labels
+  versioning_enabled       = false
+  public_access_prevention = "inherited" # Match existing state
+  labels                   = {}          # No labels currently
 
-  cors = [
-    {
-      origin          = ["https://thecuratedknot.com", "https://admin.thecuratedknot.com"]
-      method          = ["GET", "HEAD"]
-      response_header = ["Content-Type"]
-      max_age_seconds = 3600
-    }
-  ]
-
-  lifecycle_rules = [
-    {
-      action = {
-        type = "Delete"
-      }
-      condition = {
-        num_newer_versions = 5 # Keep last 5 versions
-      }
-    }
-  ]
+  cors = [] # No CORS currently configured
 
   depends_on = [google_project_service.apis]
 }

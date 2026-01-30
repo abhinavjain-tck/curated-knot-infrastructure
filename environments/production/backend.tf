@@ -1,8 +1,8 @@
-# Terraform Backend Configuration for Production Environment
+# Terraform Backend Configuration for Develop Environment
 
 terraform {
   backend "gcs" {
-    bucket = "curated-knot-production-tf-state"
+    bucket = "curated-knot-develop-tf-state"
     prefix = "terraform/state"
   }
 }

@@ -1,9 +1,9 @@
-# Production Environment Variables
+# Develop Environment Variables
 
 variable "project_id" {
   description = "GCP project ID"
   type        = string
-  default     = "curated-knot-production"
+  default     = "curated-knot-prod"
 }
 
 variable "region" {
@@ -15,5 +15,5 @@ variable "region" {
 variable "environment" {
   description = "Environment name"
   type        = string
-  default     = "production"
+  default     = "develop"
 }
