@@ -3,7 +3,7 @@
 
 terraform {
   backend "gcs" {
-    bucket = "curated-knot-develop-tf-state"
+    bucket = "curated-knot-production-tf-state"
     prefix = "terraform/state"
   }
 }
