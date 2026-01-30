@@ -87,7 +87,12 @@ jobs:
   determine-environment:
     runs-on: ubuntu-latest
     # Skip for comment events that aren't /plan or /apply
-    if: github.event_name != 'issue_comment' || needs.check-comment.outputs.triggered == 'true'
+    # For push/pull_request events, check-comment and get-pr-ref are skipped, so use always()
+    if: |
+      always() && (
+        github.event_name != 'issue_comment' ||
+        needs.check-comment.outputs.triggered == 'true'
+      )
     needs: [check-comment, get-pr-ref]
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
