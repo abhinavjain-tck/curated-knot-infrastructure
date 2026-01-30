@@ -1,4 +1,5 @@
-# Develop Environment Variables
+# Production Environment Variables
+# This manages curated-knot-prod GCP project (current production)
 
 variable "project_id" {
   description = "GCP project ID"
@@ -15,5 +16,5 @@ variable "region" {
 variable "environment" {
   description = "Environment name"
   type        = string
-  default     = "develop"
+  default     = "production"
 }
