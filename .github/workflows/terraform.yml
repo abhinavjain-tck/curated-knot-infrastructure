@@ -101,14 +101,20 @@ jobs:
       - name: Determine environment
         id: set-env
         run: |
-          # For comment triggers, use the PR's base branch
+          # For comment triggers, use the PR's base branch (not github.ref which is always main)
+          # For push events, use github.ref
+          # For pull_request events, use github.base_ref
           if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
-            BASE_REF="${{ needs.get-pr-ref.outputs.base_ref }}"
+            TARGET_BRANCH="${{ needs.get-pr-ref.outputs.base_ref }}"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            TARGET_BRANCH="${{ github.ref_name }}"
           else
-            BASE_REF="${{ github.base_ref }}"
+            TARGET_BRANCH="${{ github.base_ref }}"
           fi
 
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "$BASE_REF" == "main" ]]; then
+          echo "Target branch: $TARGET_BRANCH"
+
+          if [[ "$TARGET_BRANCH" == "main" ]]; then
             echo "environment=production" >> $GITHUB_OUTPUT
             echo "working_directory=environments/production" >> $GITHUB_OUTPUT
           else
