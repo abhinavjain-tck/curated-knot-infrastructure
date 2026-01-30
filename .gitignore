@@ -29,3 +29,6 @@ Thumbs.db
 
 # Exported resources (reference only, regenerate with gcloud bulk-export)
 exported/
+
+# direnv (contains local credentials path)
+.envrc
