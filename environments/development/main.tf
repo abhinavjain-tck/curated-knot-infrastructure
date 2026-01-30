@@ -145,8 +145,8 @@ module "cloud_run_api" {
 
   cpu           = "1"
   memory        = "512Mi"
-  max_instances = 5  # Lower limit for development
-  min_instances = 0  # Scale to zero when not in use (SAVES MONEY!)
+  max_instances = 5 # Lower limit for development
+  min_instances = 0 # Scale to zero when not in use (SAVES MONEY!)
 
   secrets = {
     DATABASE_URL        = "database-url"
