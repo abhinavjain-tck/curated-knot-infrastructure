@@ -1,5 +1,6 @@
-# Develop Environment - Main Configuration
-# This environment uses the existing curated-knot-prod GCP project
+# Development Environment - Main Configuration
+# This environment uses the curated-knot-develop GCP project
+# Lean configuration for development, demos, and testing
 
 terraform {
   required_version = ">= 1.5.0"
@@ -50,7 +51,7 @@ module "api_service_account" {
 
   project_id   = var.project_id
   account_id   = "${local.name_prefix}-api"
-  display_name = "Curated Knot API Service Account"
+  display_name = "Curated Knot API Service Account (Dev)"
   roles = [
     "roles/cloudsql.client",
     "roles/secretmanager.secretAccessor",
@@ -68,7 +69,7 @@ module "github_actions_service_account" {
 
   project_id   = var.project_id
   account_id   = "github-actions"
-  display_name = "GitHub Actions Deployer"
+  display_name = "GitHub Actions Deployer (Dev)"
   roles = [
     "roles/run.admin",
     "roles/iam.serviceAccountUser",
@@ -87,14 +88,14 @@ module "networking" {
   region             = var.region
   name_prefix        = local.name_prefix
   network            = "default"
-  vpc_connector_cidr = "10.8.0.0/28"
+  vpc_connector_cidr = "10.9.0.0/28" # Different CIDR from production
   create_nat         = true
   nat_ip_count       = 1
 
   depends_on = [google_project_service.apis]
 }
 
-# Cloud SQL PostgreSQL
+# Cloud SQL PostgreSQL - LEAN DEVELOPMENT SPECS
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
@@ -102,15 +103,15 @@ module "cloud_sql" {
   region            = var.region
   instance_name     = "${local.name_prefix}-db"
   database_version  = "POSTGRES_15"
-  tier              = "db-f1-micro"
-  disk_size         = 10
-  availability_type = "ZONAL"
+  tier              = "db-f1-micro" # Smallest tier (~$7/month) for development
+  disk_size         = 10            # Minimal disk for dev
+  availability_type = "ZONAL"       # No HA needed for dev
   backup_enabled    = true
-  retained_backups  = 7
+  retained_backups  = 3 # Fewer backups for dev
   authorized_networks = [
-    "34.180.41.227/32", # Existing authorized IP - verify if still needed
+    # NAT IP for outbound connections
   ]
-  labels = {} # No labels currently
+  labels = local.labels
 
   depends_on = [google_project_service.apis]
 }
@@ -119,35 +120,33 @@ module "cloud_sql" {
 resource "google_artifact_registry_repository" "images" {
   location      = var.region
   repository_id = "${local.name_prefix}-images"
-  description   = "Docker images for The Curated Knot" # Match existing
+  description   = "Docker images for Curated Knot API (Development)"
   format        = "DOCKER"
   project       = var.project_id
 
-  labels = {} # No labels currently
+  labels = local.labels
 
   depends_on = [google_project_service.apis]
 }
 
-# Cloud Run API Service
-# NOTE: This currently manages the live production deployment
-# The environment variable is set to "production" to match existing state
+# Cloud Run API Service - LEAN DEVELOPMENT SPECS
 module "cloud_run_api" {
   source = "../../modules/cloud-run"
 
   project_id            = var.project_id
   region                = var.region
   service_name          = "${local.name_prefix}-api"
-  image                 = "${var.region}-docker.pkg.dev/${var.project_id}/${local.name_prefix}-images/${local.name_prefix}-api:main"
+  image                 = "${var.region}-docker.pkg.dev/${var.project_id}/${local.name_prefix}-images/${local.name_prefix}-api:develop"
   service_account_email = module.api_service_account.email
   vpc_connector_id      = module.networking.vpc_connector_id
   cloud_sql_connection  = module.cloud_sql.connection_name
-  environment           = "production" # Keep as production to match existing state
-  allowed_origins       = "https://thecuratedknot.com,https://admin.thecuratedknot.com"
+  environment           = var.environment
+  allowed_origins       = "https://develop.thecuratedknot.com,https://develop-admin.thecuratedknot.com"
 
   cpu           = "1"
   memory        = "512Mi"
-  max_instances = 10
-  min_instances = 0
+  max_instances = 5 # Lower limit for development
+  min_instances = 0 # Scale to zero when not in use (SAVES MONEY!)
 
   secrets = {
     DATABASE_URL        = "database-url"
@@ -166,19 +165,37 @@ module "cloud_run_api" {
   ]
 }
 
-# Static Assets Bucket
+# Static Assets Bucket - LEAN DEVELOPMENT SPECS
 module "static_assets" {
   source = "../../modules/storage"
 
   project_id               = var.project_id
   location                 = upper(var.region)
-  name                     = "${local.name_prefix}-static-assets"
+  name                     = "${local.name_prefix}-dev-static-assets"
   storage_class            = "STANDARD"
-  versioning_enabled       = false
-  public_access_prevention = "inherited" # Match existing state
-  labels                   = {}          # No labels currently
+  versioning_enabled       = false # No versioning needed for dev
+  public_access_prevention = "enforced"
+  labels                   = local.labels
 
-  cors = [] # No CORS currently configured
+  cors = [
+    {
+      origin          = ["https://develop.thecuratedknot.com", "https://develop-admin.thecuratedknot.com"]
+      method          = ["GET", "HEAD"]
+      response_header = ["Content-Type"]
+      max_age_seconds = 3600
+    }
+  ]
+
+  lifecycle_rules = [
+    {
+      action = {
+        type = "Delete"
+      }
+      condition = {
+        age = 90 # Auto-delete old dev assets after 90 days
+      }
+    }
+  ]
 
   depends_on = [google_project_service.apis]
 }
