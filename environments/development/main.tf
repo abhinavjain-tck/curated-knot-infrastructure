@@ -129,6 +129,7 @@ module "cloud_run_api" {
   cloud_sql_connection  = module.cloud_sql.connection_name
   environment           = var.environment
   allowed_origins       = "https://develop.thecuratedknot.com,https://develop-admin.thecuratedknot.com"
+  allow_unauthenticated = false # Org policy prevents allUsers access
 
   cpu           = "1"
   memory        = "512Mi"
