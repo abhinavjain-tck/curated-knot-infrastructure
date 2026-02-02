@@ -123,12 +123,13 @@ module "cloud_run_api" {
   project_id            = var.project_id
   region                = var.region
   service_name          = "${local.name_prefix}-api"
-  image                 = "${var.region}-docker.pkg.dev/${var.project_id}/${local.name_prefix}-images/${local.name_prefix}-api:develop"
+  image                 = "gcr.io/cloudrun/hello" # Placeholder until API is built
   service_account_email = module.api_service_account.email
   vpc_connector_id      = module.networking.vpc_connector_id
   cloud_sql_connection  = module.cloud_sql.connection_name
   environment           = var.environment
   allowed_origins       = "https://develop.thecuratedknot.com,https://develop-admin.thecuratedknot.com"
+  allow_unauthenticated = false # Org policy prevents allUsers access
 
   cpu           = "1"
   memory        = "512Mi"

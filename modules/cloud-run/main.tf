@@ -75,6 +75,12 @@ variable "secrets" {
   default     = {}
 }
 
+variable "allow_unauthenticated" {
+  description = "Allow unauthenticated access (allUsers)"
+  type        = bool
+  default     = true
+}
+
 resource "google_cloud_run_v2_service" "api" {
   name     = var.service_name
   location = var.region
@@ -177,8 +183,9 @@ resource "google_cloud_run_v2_service" "api" {
   }
 }
 
-# Make the service publicly accessible
+# Make the service publicly accessible (optional)
 resource "google_cloud_run_service_iam_member" "public" {
+  count    = var.allow_unauthenticated ? 1 : 0
   location = google_cloud_run_v2_service.api.location
   project  = google_cloud_run_v2_service.api.project
   service  = google_cloud_run_v2_service.api.name
