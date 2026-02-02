@@ -118,8 +118,8 @@ jobs:
             echo "environment=production" >> $GITHUB_OUTPUT
             echo "working_directory=environments/production" >> $GITHUB_OUTPUT
           else
-            echo "environment=develop" >> $GITHUB_OUTPUT
-            echo "working_directory=environments/develop" >> $GITHUB_OUTPUT
+            echo "environment=development" >> $GITHUB_OUTPUT
+            echo "working_directory=environments/development" >> $GITHUB_OUTPUT
           fi
 
   terraform-validate:
