@@ -98,17 +98,17 @@ module "networking" {
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
-  project_id              = var.project_id
-  region                  = var.region
-  instance_name           = "${local.name_prefix}-db"
-  database_version        = "POSTGRES_15"
-  tier                    = "db-f1-micro"        # Match existing
-  disk_size               = 10                   # Match existing
-  availability_type       = "ZONAL"
-  backup_enabled          = true
-  retained_backups        = 7                    # Match existing
-  authorized_networks     = []                   # Match existing (no authorized networks)
-  labels                  = {}                   # No labels currently
+  project_id          = var.project_id
+  region              = var.region
+  instance_name       = "${local.name_prefix}-db"
+  database_version    = "POSTGRES_15"
+  tier                = "db-f1-micro" # Match existing
+  disk_size           = 10            # Match existing
+  availability_type   = "ZONAL"
+  backup_enabled      = true
+  retained_backups    = 7  # Match existing
+  authorized_networks = [] # Match existing (no authorized networks)
+  labels              = {} # No labels currently
 
   depends_on = [google_project_service.apis]
 }
@@ -172,9 +172,9 @@ module "static_assets" {
   location                 = upper(var.region)
   name                     = "${local.name_prefix}-static-assets" # Match existing
   storage_class            = "STANDARD"
-  versioning_enabled       = false                                # Match existing
-  public_access_prevention = "inherited"                          # Match existing state
-  labels                   = {}                                   # No labels currently
+  versioning_enabled       = false       # Match existing
+  public_access_prevention = "inherited" # Match existing state
+  labels                   = {}          # No labels currently
 
   cors = [] # No CORS currently configured
 
