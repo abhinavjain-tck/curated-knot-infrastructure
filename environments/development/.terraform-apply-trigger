@@ -1,0 +1,4 @@
+# This file triggers Terraform apply for development infrastructure
+# Creation timestamp: 2026-02-02
+
+This PR will create all development infrastructure resources via Terraform.
