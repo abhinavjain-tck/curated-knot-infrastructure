@@ -1,4 +1,4 @@
-# Develop Environment Outputs
+# Development Environment Outputs
 
 output "cloud_run_url" {
   description = "URL of the Cloud Run API service"
