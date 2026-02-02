@@ -38,6 +38,7 @@ resource "google_project_service" "apis" {
     "cloudbuild.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
   ])
 
   project = var.project_id
