@@ -23,7 +23,6 @@ locals {
   labels = {
     environment = var.environment
     managed-by  = "terraform"
-    tested-at   = "2026-01-29" # Test change for /plan and /apply comment triggers
   }
 }
 

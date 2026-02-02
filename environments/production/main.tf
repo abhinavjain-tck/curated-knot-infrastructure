@@ -146,8 +146,8 @@ module "cloud_run_api" {
 
   cpu           = "1"
   memory        = "512Mi"
-  max_instances = 20 # Higher limit for production
-  min_instances = 1  # Keep at least 1 instance warm for production
+  max_instances = 10
+  min_instances = 0
 
   secrets = {
     DATABASE_URL        = "database-url"
