@@ -36,6 +36,6 @@ output "api_service_account" {
 }
 
 output "github_actions_service_account" {
-  description = "GitHub Actions service account email"
-  value       = module.github_actions_service_account.email
+  description = "GitHub Actions service account email (manually created)"
+  value       = "github-actions-dev@curated-knot-develop.iam.gserviceaccount.com"
 }
