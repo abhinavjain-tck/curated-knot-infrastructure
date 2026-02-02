@@ -64,21 +64,9 @@ module "api_service_account" {
 }
 
 # Service Account for GitHub Actions
-module "github_actions_service_account" {
-  source = "../../modules/service-account"
-
-  project_id   = var.project_id
-  account_id   = "github-actions"
-  display_name = "GitHub Actions Deployer (Dev)"
-  roles = [
-    "roles/run.admin",
-    "roles/iam.serviceAccountUser",
-    "roles/artifactregistry.writer",
-    "roles/storage.admin",
-  ]
-
-  depends_on = [google_project_service.apis]
-}
+# NOTE: This is manually created outside of Terraform with more extensive permissions
+# to support Terraform operations via GitHub Actions
+# Email: github-actions-dev@curated-knot-develop.iam.gserviceaccount.com
 
 # Networking (VPC Connector, NAT, Router)
 module "networking" {
@@ -105,13 +93,11 @@ module "cloud_sql" {
   database_version  = "POSTGRES_15"
   tier              = "db-f1-micro" # Smallest tier (~$7/month) for development
   disk_size         = 10            # Minimal disk for dev
-  availability_type = "ZONAL"       # No HA needed for dev
+  availability_type = "ZONAL" # No HA needed for dev
   backup_enabled    = true
-  retained_backups  = 3 # Fewer backups for dev
-  authorized_networks = [
-    # NAT IP for outbound connections
-  ]
-  labels = local.labels
+  retained_backups  = 3                # Fewer backups for dev
+  authorized_networks = []             # Access via VPC connector only
+  labels                   = local.labels
 
   depends_on = [google_project_service.apis]
 }
