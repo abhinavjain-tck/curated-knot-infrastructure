@@ -87,17 +87,17 @@ module "networking" {
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
-  project_id        = var.project_id
-  region            = var.region
-  instance_name     = "${local.name_prefix}-db"
-  database_version  = "POSTGRES_15"
-  tier              = "db-f1-micro" # Smallest tier (~$7/month) for development
-  disk_size         = 10            # Minimal disk for dev
-  availability_type = "ZONAL" # No HA needed for dev
-  backup_enabled    = true
-  retained_backups  = 3                # Fewer backups for dev
-  authorized_networks = []             # Access via VPC connector only
-  labels                   = local.labels
+  project_id          = var.project_id
+  region              = var.region
+  instance_name       = "${local.name_prefix}-db"
+  database_version    = "POSTGRES_15"
+  tier                = "db-f1-micro" # Smallest tier (~$7/month) for development
+  disk_size           = 10            # Minimal disk for dev
+  availability_type   = "ZONAL"       # No HA needed for dev
+  backup_enabled      = true
+  retained_backups    = 3  # Fewer backups for dev
+  authorized_networks = [] # Access via VPC connector only
+  labels              = local.labels
 
   depends_on = [google_project_service.apis]
 }
