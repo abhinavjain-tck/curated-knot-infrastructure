@@ -1,45 +1,57 @@
 name: Terraform CI/CD
 
+# Single-branch architecture: all PRs target main
+# Environment is determined by:
+# 1. Explicit commands: /plan-dev, /plan-prod, /apply-dev, /apply-prod
+# 2. Changed files: environments/development/* or environments/production/*
+# 3. If only modules/* changed: runs for BOTH environments
+
 on:
   push:
     branches:
       - main
-      - develop
     paths:
       - 'modules/**'
       - 'environments/**'
-      - '*.tf'
       - '.github/workflows/terraform.yml'
   pull_request:
     branches:
       - main
-      - develop
     paths:
       - 'modules/**'
       - 'environments/**'
-      - '*.tf'
       - '.github/workflows/terraform.yml'
   issue_comment:
     types: [created]
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to apply'
+        required: true
+        type: choice
+        options:
+          - development
+          - production
+          - both
 
 concurrency:
-  group: terraform-${{ github.ref }}
+  group: terraform-${{ github.ref }}-${{ github.event.inputs.environment || 'auto' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   TF_VERSION: "1.5.7"
 
 jobs:
-  # Check if this is a comment trigger (/plan or /apply)
+  # Check if this is a comment trigger
   check-comment:
     runs-on: ubuntu-latest
     if: github.event_name == 'issue_comment'
     outputs:
       triggered: ${{ steps.check.outputs.triggered }}
       command: ${{ steps.check.outputs.command }}
+      environment: ${{ steps.check.outputs.environment }}
     steps:
-      - name: Check for /plan or /apply comment
+      - name: Check for terraform commands
         id: check
         uses: actions/github-script@v7
         with:
@@ -52,86 +64,167 @@ jobs:
               return;
             }
 
-            if (comment === '/plan') {
+            // Support: /plan, /apply (auto-detect), /plan-dev, /plan-prod, /apply-dev, /apply-prod
+            const commands = {
+              '/plan-dev': { command: 'plan', environment: 'development' },
+              '/plan-prod': { command: 'plan', environment: 'production' },
+              '/apply-dev': { command: 'apply', environment: 'development' },
+              '/apply-prod': { command: 'apply', environment: 'production' },
+              '/plan': { command: 'plan', environment: 'auto' },
+              '/apply': { command: 'apply', environment: 'auto' },
+            };
+
+            const match = commands[comment];
+            if (match) {
               core.setOutput('triggered', 'true');
-              core.setOutput('command', 'plan');
-            } else if (comment === '/apply') {
-              core.setOutput('triggered', 'true');
-              core.setOutput('command', 'apply');
+              core.setOutput('command', match.command);
+              core.setOutput('environment', match.environment);
             } else {
               core.setOutput('triggered', 'false');
             }
 
-  # Get PR ref for comment triggers
-  get-pr-ref:
+  # Get PR details for comment triggers
+  get-pr-info:
     runs-on: ubuntu-latest
     needs: check-comment
-    if: needs.check-comment.outputs.triggered == 'true'
+    if: always() && (github.event_name != 'issue_comment' || needs.check-comment.outputs.triggered == 'true')
     outputs:
-      ref: ${{ steps.get-ref.outputs.ref }}
-      base_ref: ${{ steps.get-ref.outputs.base_ref }}
+      ref: ${{ steps.get-info.outputs.ref }}
+      pr_number: ${{ steps.get-info.outputs.pr_number }}
     steps:
-      - name: Get PR ref
-        id: get-ref
+      - name: Get PR info
+        id: get-info
         uses: actions/github-script@v7
         with:
           script: |
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.issue.number
-            });
-            core.setOutput('ref', pr.head.ref);
-            core.setOutput('base_ref', pr.base.ref);
+            if (context.eventName === 'issue_comment') {
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.issue.number
+              });
+              core.setOutput('ref', pr.head.ref);
+              core.setOutput('pr_number', context.payload.issue.number);
+            } else if (context.eventName === 'pull_request') {
+              core.setOutput('ref', context.payload.pull_request.head.ref);
+              core.setOutput('pr_number', context.payload.pull_request.number);
+            } else {
+              core.setOutput('ref', context.ref);
+              core.setOutput('pr_number', '');
+            }
 
-  determine-environment:
+  # Detect which environments need to be processed based on changed files
+  detect-environments:
     runs-on: ubuntu-latest
-    # Skip for comment events that aren't /plan or /apply
-    # For push/pull_request events, check-comment and get-pr-ref are skipped, so use always()
-    if: |
-      always() && (
-        github.event_name != 'issue_comment' ||
-        needs.check-comment.outputs.triggered == 'true'
-      )
-    needs: [check-comment, get-pr-ref]
+    needs: [check-comment, get-pr-info]
+    if: always() && (github.event_name != 'issue_comment' || needs.check-comment.outputs.triggered == 'true')
     outputs:
-      environment: ${{ steps.set-env.outputs.environment }}
-      working_directory: ${{ steps.set-env.outputs.working_directory }}
-    steps:
-      - name: Determine environment
-        id: set-env
-        run: |
-          # For comment triggers, use the PR's base branch (not github.ref which is always main)
-          # For push events, use github.ref
-          # For pull_request events, use github.base_ref
-          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
-            TARGET_BRANCH="${{ needs.get-pr-ref.outputs.base_ref }}"
-          elif [[ "${{ github.event_name }}" == "push" ]]; then
-            TARGET_BRANCH="${{ github.ref_name }}"
-          else
-            TARGET_BRANCH="${{ github.base_ref }}"
-          fi
-
-          echo "Target branch: $TARGET_BRANCH"
-
-          if [[ "$TARGET_BRANCH" == "main" ]]; then
-            echo "environment=production" >> $GITHUB_OUTPUT
-            echo "working_directory=environments/production" >> $GITHUB_OUTPUT
-          else
-            echo "environment=development" >> $GITHUB_OUTPUT
-            echo "working_directory=environments/development" >> $GITHUB_OUTPUT
-          fi
-
-  terraform-validate:
-    runs-on: ubuntu-latest
-    needs: [determine-environment, check-comment, get-pr-ref]
-    if: always() && needs.determine-environment.result == 'success'
+      environments: ${{ steps.detect.outputs.environments }}
+      run_development: ${{ steps.detect.outputs.run_development }}
+      run_production: ${{ steps.detect.outputs.run_production }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # For comment triggers, checkout the PR branch
-          ref: ${{ github.event_name == 'issue_comment' && needs.get-pr-ref.outputs.ref || github.ref }}
+          ref: ${{ needs.get-pr-info.outputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Detect environments from changes
+        id: detect
+        env:
+          EXPLICIT_ENV: ${{ needs.check-comment.outputs.environment || github.event.inputs.environment || 'auto' }}
+        run: |
+          echo "Explicit environment: $EXPLICIT_ENV"
+
+          # If explicit environment specified, use it
+          if [[ "$EXPLICIT_ENV" == "development" ]]; then
+            echo "environments=[\"development\"]" >> $GITHUB_OUTPUT
+            echo "run_development=true" >> $GITHUB_OUTPUT
+            echo "run_production=false" >> $GITHUB_OUTPUT
+            exit 0
+          elif [[ "$EXPLICIT_ENV" == "production" ]]; then
+            echo "environments=[\"production\"]" >> $GITHUB_OUTPUT
+            echo "run_development=false" >> $GITHUB_OUTPUT
+            echo "run_production=true" >> $GITHUB_OUTPUT
+            exit 0
+          elif [[ "$EXPLICIT_ENV" == "both" ]]; then
+            echo "environments=[\"development\",\"production\"]" >> $GITHUB_OUTPUT
+            echo "run_development=true" >> $GITHUB_OUTPUT
+            echo "run_production=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Auto-detect from changed files
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            CHANGED_FILES=$(git diff --name-only origin/main..HEAD)
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            CHANGED_FILES=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || git ls-files)
+          else
+            # For comment triggers, compare PR branch to main
+            CHANGED_FILES=$(git diff --name-only origin/main..HEAD)
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          DEV_CHANGED=false
+          PROD_CHANGED=false
+          MODULES_CHANGED=false
+
+          while IFS= read -r file; do
+            if [[ "$file" == environments/development/* ]]; then
+              DEV_CHANGED=true
+            elif [[ "$file" == environments/production/* ]]; then
+              PROD_CHANGED=true
+            elif [[ "$file" == modules/* ]]; then
+              MODULES_CHANGED=true
+            fi
+          done <<< "$CHANGED_FILES"
+
+          echo "Dev changed: $DEV_CHANGED, Prod changed: $PROD_CHANGED, Modules changed: $MODULES_CHANGED"
+
+          # If modules changed, run for both environments
+          if [[ "$MODULES_CHANGED" == "true" ]]; then
+            DEV_CHANGED=true
+            PROD_CHANGED=true
+          fi
+
+          # Build output
+          ENVS=()
+          if [[ "$DEV_CHANGED" == "true" ]]; then
+            ENVS+=("\"development\"")
+          fi
+          if [[ "$PROD_CHANGED" == "true" ]]; then
+            ENVS+=("\"production\"")
+          fi
+
+          # If nothing detected, default to development for safety
+          if [[ ${#ENVS[@]} -eq 0 ]]; then
+            ENVS+=("\"development\"")
+            DEV_CHANGED=true
+          fi
+
+          ENV_JSON=$(IFS=,; echo "[${ENVS[*]}]")
+          echo "environments=$ENV_JSON" >> $GITHUB_OUTPUT
+          echo "run_development=$DEV_CHANGED" >> $GITHUB_OUTPUT
+          echo "run_production=$PROD_CHANGED" >> $GITHUB_OUTPUT
+
+          echo "Will run for: $ENV_JSON"
+
+  # Validate terraform for all detected environments
+  terraform-validate:
+    runs-on: ubuntu-latest
+    needs: [detect-environments, get-pr-info]
+    if: always() && needs.detect-environments.result == 'success'
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.detect-environments.outputs.environments) }}
+      fail-fast: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.get-pr-info.outputs.ref || github.ref }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -141,28 +234,31 @@ jobs:
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
-      - name: Terraform Init (modules only)
-        working-directory: ${{ needs.determine-environment.outputs.working_directory }}
+      - name: Terraform Init (validation only)
+        working-directory: environments/${{ matrix.environment }}
         run: terraform init -backend=false
 
       - name: Terraform Validate
-        working-directory: ${{ needs.determine-environment.outputs.working_directory }}
+        working-directory: environments/${{ matrix.environment }}
         run: terraform validate
 
-  terraform-plan:
+  # Plan for development environment
+  terraform-plan-development:
     runs-on: ubuntu-latest
-    needs: [determine-environment, terraform-validate, check-comment, get-pr-ref]
-    if: always() && needs.terraform-validate.result == 'success'
-    environment: ${{ needs.determine-environment.outputs.environment }}
+    needs: [detect-environments, terraform-validate, get-pr-info, check-comment]
+    if: always() && needs.terraform-validate.result == 'success' && needs.detect-environments.outputs.run_development == 'true'
+    environment: development
     permissions:
       contents: read
       id-token: write
       pull-requests: write
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'issue_comment' && needs.get-pr-ref.outputs.ref || github.ref }}
+          ref: ${{ needs.get-pr-info.outputs.ref || github.ref }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -179,32 +275,31 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Terraform Init
-        working-directory: ${{ needs.determine-environment.outputs.working_directory }}
+        working-directory: environments/development
         run: terraform init
 
       - name: Terraform Plan
         id: plan
-        working-directory: ${{ needs.determine-environment.outputs.working_directory }}
+        working-directory: environments/development
         run: |
-          terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+          terraform plan -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
+          echo "exitcode=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
-      - name: Comment PR with Plan
-        if: github.event_name == 'pull_request' || github.event_name == 'issue_comment'
+      - name: Comment PR with Development Plan
+        if: needs.get-pr-info.outputs.pr_number != ''
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('${{ needs.determine-environment.outputs.working_directory }}/plan_output.txt', 'utf8');
-            const maxLength = 65000;
+            const plan = fs.readFileSync('environments/development/plan_output.txt', 'utf8');
+            const maxLength = 60000;
             const truncatedPlan = plan.length > maxLength
               ? plan.substring(0, maxLength) + '\n\n... (truncated)'
               : plan;
 
-            const prNumber = context.payload.pull_request?.number || context.payload.issue?.number;
-
-            const output = `#### Terraform Plan - ${{ needs.determine-environment.outputs.environment }}
+            const output = `#### 🔧 Terraform Plan - Development
 
             <details><summary>Show Plan</summary>
 
@@ -214,46 +309,40 @@ jobs:
 
             </details>
 
-            *Triggered by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*
+            *Triggered by: @${{ github.actor }}*
 
-            > Comment \`/apply\` to apply this plan.`;
+            > Use \`/apply-dev\` to apply this plan to development.`;
 
             github.rest.issues.createComment({
-              issue_number: prNumber,
+              issue_number: ${{ needs.get-pr-info.outputs.pr_number }},
               owner: context.repo.owner,
               repo: context.repo.repo,
               body: output
             });
 
-      - name: Upload Plan Artifact
+      - name: Upload Development Plan
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan-${{ needs.determine-environment.outputs.environment }}
-          path: ${{ needs.determine-environment.outputs.working_directory }}/tfplan
+          name: tfplan-development
+          path: environments/development/tfplan
 
-      - name: Check Plan Status
-        if: steps.plan.outcome == 'failure'
-        run: exit 1
-
-  terraform-apply:
+  # Plan for production environment
+  terraform-plan-production:
     runs-on: ubuntu-latest
-    needs: [determine-environment, terraform-plan, check-comment, get-pr-ref]
-    # Run on push to main/develop OR when /apply comment is made
-    if: |
-      always() && needs.terraform-plan.result == 'success' && (
-        (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
-        (github.event_name == 'issue_comment' && needs.check-comment.outputs.command == 'apply')
-      )
-    environment: ${{ needs.determine-environment.outputs.environment }}
+    needs: [detect-environments, terraform-validate, get-pr-info, check-comment]
+    if: always() && needs.terraform-validate.result == 'success' && needs.detect-environments.outputs.run_production == 'true'
+    environment: production
     permissions:
       contents: read
       id-token: write
       pull-requests: write
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'issue_comment' && needs.get-pr-ref.outputs.ref || github.ref }}
+          ref: ${{ needs.get-pr-info.outputs.ref || github.ref }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -269,34 +358,185 @@ jobs:
       - name: Setup Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Download Plan Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: tfplan-${{ needs.determine-environment.outputs.environment }}
-          path: ${{ needs.determine-environment.outputs.working_directory }}
-
       - name: Terraform Init
-        working-directory: ${{ needs.determine-environment.outputs.working_directory }}
+        working-directory: environments/production
         run: terraform init
 
-      - name: Terraform Apply
-        working-directory: ${{ needs.determine-environment.outputs.working_directory }}
-        run: terraform apply -auto-approve tfplan
+      - name: Terraform Plan
+        id: plan
+        working-directory: environments/production
+        run: |
+          terraform plan -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
+          echo "exitcode=$?" >> $GITHUB_OUTPUT
+        continue-on-error: true
 
-      - name: Comment PR with Apply Result
-        if: github.event_name == 'issue_comment'
+      - name: Comment PR with Production Plan
+        if: needs.get-pr-info.outputs.pr_number != ''
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const prNumber = context.payload.issue.number;
+            const fs = require('fs');
+            const plan = fs.readFileSync('environments/production/plan_output.txt', 'utf8');
+            const maxLength = 60000;
+            const truncatedPlan = plan.length > maxLength
+              ? plan.substring(0, maxLength) + '\n\n... (truncated)'
+              : plan;
+
+            const output = `#### 🚀 Terraform Plan - Production
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${truncatedPlan}
+            \`\`\`
+
+            </details>
+
+            *Triggered by: @${{ github.actor }}*
+
+            > ⚠️ Use \`/apply-prod\` to apply this plan to **PRODUCTION**.`;
+
             github.rest.issues.createComment({
-              issue_number: prNumber,
+              issue_number: ${{ needs.get-pr-info.outputs.pr_number }},
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `#### Terraform Apply - ${{ needs.determine-environment.outputs.environment }} ✅
+              body: output
+            });
 
-              Terraform apply completed successfully!
+      - name: Upload Production Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-production
+          path: environments/production/tfplan
+
+  # Apply to development (on push to main OR /apply-dev command)
+  terraform-apply-development:
+    runs-on: ubuntu-latest
+    needs: [detect-environments, terraform-plan-development, get-pr-info, check-comment]
+    if: |
+      always() && needs.terraform-plan-development.result == 'success' && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-environments.outputs.run_development == 'true') ||
+        (github.event_name == 'issue_comment' && needs.check-comment.outputs.command == 'apply' &&
+         (needs.check-comment.outputs.environment == 'development' || needs.check-comment.outputs.environment == 'auto'))
+      )
+    environment: development
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.get-pr-info.outputs.ref || github.ref }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.TERRAFORM_SERVICE_ACCOUNT }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download Development Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-development
+          path: environments/development
+
+      - name: Terraform Init
+        working-directory: environments/development
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: environments/development
+        run: terraform apply -auto-approve tfplan
+
+      - name: Comment PR with Apply Result
+        if: needs.get-pr-info.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: ${{ needs.get-pr-info.outputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `#### 🔧 Terraform Apply - Development ✅
+
+              Development infrastructure has been updated successfully!
+
+              *Triggered by: @${{ github.actor }}*`
+            });
+
+  # Apply to production (ONLY on explicit /apply-prod command, never auto)
+  terraform-apply-production:
+    runs-on: ubuntu-latest
+    needs: [detect-environments, terraform-plan-production, get-pr-info, check-comment]
+    if: |
+      always() && needs.terraform-plan-production.result == 'success' &&
+      github.event_name == 'issue_comment' &&
+      needs.check-comment.outputs.command == 'apply' &&
+      needs.check-comment.outputs.environment == 'production'
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.get-pr-info.outputs.ref || github.ref }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.TERRAFORM_SERVICE_ACCOUNT }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download Production Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-production
+          path: environments/production
+
+      - name: Terraform Init
+        working-directory: environments/production
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: environments/production
+        run: terraform apply -auto-approve tfplan
+
+      - name: Comment PR with Apply Result
+        if: needs.get-pr-info.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: ${{ needs.get-pr-info.outputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `#### 🚀 Terraform Apply - Production ✅
+
+              **Production infrastructure has been updated successfully!**
 
               *Triggered by: @${{ github.actor }}*`
             });

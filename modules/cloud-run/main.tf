@@ -116,9 +116,19 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       # Static environment variables
+      # Always use NODE_ENV=production for deployed environments
+      # This ensures the app uses /tmp for writable paths (like GraphQL schema)
+      # Local development uses NODE_ENV=development
       env {
         name  = "NODE_ENV"
-        value = var.environment == "production" ? "production" : "development"
+        value = "production"
+      }
+
+      # ENVIRONMENT tracks which deployment environment (develop/production)
+      # Use this for logging, feature flags, etc. instead of NODE_ENV
+      env {
+        name  = "ENVIRONMENT"
+        value = var.environment
       }
 
       env {
