@@ -410,7 +410,7 @@ jobs:
           name: tfplan-production
           path: environments/production/tfplan
 
-  # Apply to development (on push to main OR /apply-dev command)
+  # Apply to development (on push to main, /apply-dev command, or workflow_dispatch)
   terraform-apply-development:
     runs-on: ubuntu-latest
     needs: [detect-environments, terraform-plan-development, get-pr-info, check-comment]
@@ -418,7 +418,8 @@ jobs:
       always() && needs.terraform-plan-development.result == 'success' && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-environments.outputs.run_development == 'true') ||
         (github.event_name == 'issue_comment' && needs.check-comment.outputs.command == 'apply' &&
-         (needs.check-comment.outputs.environment == 'development' || needs.check-comment.outputs.environment == 'auto'))
+         (needs.check-comment.outputs.environment == 'development' || needs.check-comment.outputs.environment == 'auto')) ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'development' || github.event.inputs.environment == 'both'))
       )
     environment: development
     permissions:
@@ -476,15 +477,16 @@ jobs:
               *Triggered by: @${{ github.actor }}*`
             });
 
-  # Apply to production (ONLY on explicit /apply-prod command, never auto)
+  # Apply to production (ONLY on explicit /apply-prod command or workflow_dispatch, never auto)
   terraform-apply-production:
     runs-on: ubuntu-latest
     needs: [detect-environments, terraform-plan-production, get-pr-info, check-comment]
     if: |
-      always() && needs.terraform-plan-production.result == 'success' &&
-      github.event_name == 'issue_comment' &&
-      needs.check-comment.outputs.command == 'apply' &&
-      needs.check-comment.outputs.environment == 'production'
+      always() && needs.terraform-plan-production.result == 'success' && (
+        (github.event_name == 'issue_comment' && needs.check-comment.outputs.command == 'apply' &&
+         needs.check-comment.outputs.environment == 'production') ||
+        (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'production' || github.event.inputs.environment == 'both'))
+      )
     environment: production
     permissions:
       contents: read
