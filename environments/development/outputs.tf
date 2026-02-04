@@ -36,6 +36,11 @@ output "api_service_account" {
 }
 
 output "github_actions_service_account" {
-  description = "GitHub Actions service account email (manually created)"
-  value       = "github-actions-dev@curated-knot-develop.iam.gserviceaccount.com"
+  description = "GitHub Actions service account email (GCP_SERVICE_ACCOUNT_DEV)"
+  value       = module.github_actions_workload_identity.service_account_email
+}
+
+output "github_actions_workload_identity_provider" {
+  description = "Workload Identity Provider (GCP_WORKLOAD_IDENTITY_PROVIDER_DEV)"
+  value       = module.github_actions_workload_identity.workload_identity_provider
 }

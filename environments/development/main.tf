@@ -64,10 +64,27 @@ module "api_service_account" {
   depends_on = [google_project_service.apis]
 }
 
-# Service Account for GitHub Actions
-# NOTE: This is manually created outside of Terraform with more extensive permissions
-# to support Terraform operations via GitHub Actions
-# Email: github-actions-dev@curated-knot-develop.iam.gserviceaccount.com
+# Workload Identity Federation for GitHub Actions
+# This enables GitHub Actions to authenticate to GCP without long-lived credentials
+module "github_actions_workload_identity" {
+  source = "../../modules/workload-identity"
+
+  project_id        = var.project_id
+  github_repository = "abhinavjain-tck/the-curated-knot"
+
+  service_account_id           = "github-actions-dev"
+  service_account_display_name = "GitHub Actions (Development)"
+  service_account_roles = [
+    "roles/run.admin",
+    "roles/storage.admin",
+    "roles/secretmanager.secretAccessor",
+    "roles/iam.serviceAccountUser",
+    "roles/cloudsql.client",
+    "roles/artifactregistry.writer",
+  ]
+
+  depends_on = [google_project_service.apis]
+}
 
 # Networking (VPC Connector, NAT, Router)
 module "networking" {
