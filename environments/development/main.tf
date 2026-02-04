@@ -79,6 +79,7 @@ module "github_actions_workload_identity" {
     "roles/storage.admin",
     "roles/secretmanager.secretAccessor",
     "roles/iam.serviceAccountUser",
+    "roles/iam.workloadIdentityPoolAdmin", # Required for Terraform to manage workload identity
     "roles/cloudsql.client",
     "roles/artifactregistry.writer",
   ]
