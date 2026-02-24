@@ -32,3 +32,6 @@ exported/
 
 # direnv (contains local credentials path)
 .envrc
+
+# Cloud SQL Proxy binary (downloaded per-platform)
+cloud-sql-proxy

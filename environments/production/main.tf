@@ -150,9 +150,8 @@ module "cloud_run_api" {
   secrets = {
     DATABASE_URL        = "database-url"
     PRISMA_DATABASE_URL = "prisma-database-url"
-    MONGODB_URI         = "mongodb-uri"
     SENTRY_DSN          = "sentry-dsn"
-    CLERK_SECRET_KEY    = "clerk-secret-key"
+    API_JWT_SECRET      = "api-jwt-secret"
   }
 
   depends_on = [

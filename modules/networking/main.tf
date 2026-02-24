@@ -54,7 +54,7 @@ resource "google_vpc_access_connector" "connector" {
   ip_cidr_range = var.vpc_connector_cidr
 }
 
-# Static IP for NAT (for MongoDB Atlas whitelisting)
+# Static IP for NAT (for external service whitelisting)
 resource "google_compute_address" "nat_ip" {
   count   = var.create_nat ? var.nat_ip_count : 0
   name    = "${var.name_prefix}-nat-ip${count.index > 0 ? "-${count.index}" : ""}"

@@ -21,7 +21,7 @@ output "vpc_connector_id" {
 }
 
 output "nat_ips" {
-  description = "NAT gateway IP addresses (for MongoDB Atlas whitelisting)"
+  description = "NAT gateway IP addresses"
   value       = module.networking.nat_ips
 }
 
