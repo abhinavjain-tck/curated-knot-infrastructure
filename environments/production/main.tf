@@ -107,7 +107,7 @@ module "cloud_sql" {
   availability_type   = "ZONAL"
   backup_enabled      = true
   retained_backups    = 7  # Match existing
-  authorized_networks = [] # Match existing (no authorized networks)
+  authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
   labels              = {} # No labels currently
 
   depends_on = [google_project_service.apis]

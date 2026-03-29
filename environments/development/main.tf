@@ -115,7 +115,7 @@ module "cloud_sql" {
   availability_type   = "ZONAL"       # No HA needed for dev
   backup_enabled      = true
   retained_backups    = 3  # Fewer backups for dev
-  authorized_networks = [] # Access via VPC connector only
+  authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
   labels              = local.labels
 
   depends_on = [google_project_service.apis]
