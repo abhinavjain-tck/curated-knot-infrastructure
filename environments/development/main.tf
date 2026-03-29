@@ -114,7 +114,7 @@ module "cloud_sql" {
   disk_size           = 10            # Minimal disk for dev
   availability_type   = "ZONAL"       # No HA needed for dev
   backup_enabled      = true
-  retained_backups    = 3  # Fewer backups for dev
+  retained_backups    = 3             # Fewer backups for dev
   authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
   labels              = local.labels
 
