@@ -68,6 +68,12 @@ variable "public_access_prevention" {
   default     = "enforced"
 }
 
+variable "public_read" {
+  description = "Grant allUsers objectViewer access for public reads (requires public_access_prevention = inherited)"
+  type        = bool
+  default     = false
+}
+
 resource "google_storage_bucket" "bucket" {
   name                        = var.name
   location                    = var.location
@@ -108,6 +114,14 @@ resource "google_storage_bucket" "bucket" {
   }
 
   labels = var.labels
+}
+
+# Grant public read access to all objects in the bucket
+resource "google_storage_bucket_iam_member" "public_read" {
+  count  = var.public_read ? 1 : 0
+  bucket = google_storage_bucket.bucket.name
+  role   = "roles/storage.objectViewer"
+  member = "allUsers"
 }
 
 output "name" {

@@ -216,7 +216,8 @@ module "user_uploads" {
   name                     = "${local.name_prefix}-dev-uploads"
   storage_class            = "STANDARD"
   versioning_enabled       = false
-  public_access_prevention = "inherited" # Signed URLs need public-read access
+  public_access_prevention = "inherited" # Must be inherited for public_read
+  public_read              = true        # Wedding images must be publicly viewable
   labels                   = local.labels
 
   cors = [
