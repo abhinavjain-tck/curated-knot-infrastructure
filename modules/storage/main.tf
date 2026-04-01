@@ -68,6 +68,12 @@ variable "public_access_prevention" {
   default     = "enforced"
 }
 
+variable "public_read" {
+  description = "Grant allUsers read-only access (get, no list) for public reads (requires public_access_prevention = inherited)"
+  type        = bool
+  default     = false
+}
+
 resource "google_storage_bucket" "bucket" {
   name                        = var.name
   location                    = var.location
@@ -108,6 +114,24 @@ resource "google_storage_bucket" "bucket" {
   }
 
   labels = var.labels
+}
+
+# Custom role: objects.get only (no objects.list to prevent bucket enumeration)
+resource "google_project_iam_custom_role" "storage_public_reader" {
+  count       = var.public_read ? 1 : 0
+  project     = var.project_id
+  role_id     = "storagePublicReader_${replace(var.name, "-", "_")}"
+  title       = "Storage Public Reader (${var.name})"
+  description = "Read-only access to GCS objects without list permission"
+  permissions = ["storage.objects.get"]
+}
+
+# Grant public read access to all objects in the bucket
+resource "google_storage_bucket_iam_member" "public_read" {
+  count  = var.public_read ? 1 : 0
+  bucket = google_storage_bucket.bucket.name
+  role   = google_project_iam_custom_role.storage_public_reader[0].id
+  member = "allUsers"
 }
 
 output "name" {

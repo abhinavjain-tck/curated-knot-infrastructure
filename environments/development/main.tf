@@ -38,6 +38,7 @@ resource "google_project_service" "apis" {
     "cloudbuild.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
+    "storage.googleapis.com",
   ])
 
   project = var.project_id
@@ -59,6 +60,7 @@ module "api_service_account" {
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",
+    "roles/storage.objectAdmin", # GCS signed URL generation + object management
   ]
 
   depends_on = [google_project_service.apis]
@@ -80,6 +82,7 @@ module "github_actions_workload_identity" {
     "roles/secretmanager.secretAccessor",
     "roles/iam.serviceAccountUser",
     "roles/iam.workloadIdentityPoolAdmin", # Required for Terraform to manage workload identity
+    "roles/iam.roleAdmin",                 # Required for Terraform to manage custom IAM roles
     "roles/cloudsql.client",
     "roles/artifactregistry.writer",
   ]
@@ -198,6 +201,42 @@ module "static_assets" {
       }
       condition = {
         age = 90 # Auto-delete old dev assets after 90 days
+      }
+    }
+  ]
+
+  depends_on = [google_project_service.apis]
+}
+
+# User Uploads Bucket - Wedding images, profile photos, etc.
+module "user_uploads" {
+  source = "../../modules/storage"
+
+  project_id               = var.project_id
+  location                 = upper(var.region)
+  name                     = "${local.name_prefix}-dev-uploads"
+  storage_class            = "STANDARD"
+  versioning_enabled       = false
+  public_access_prevention = "inherited" # Must be inherited for public_read
+  public_read              = true        # Wedding images must be publicly viewable
+  labels                   = local.labels
+
+  cors = [
+    {
+      origin          = ["http://localhost:3001", "https://develop.thecuratedknot.com"]
+      method          = ["PUT", "GET", "HEAD"]
+      response_header = ["Content-Type", "Content-Length"]
+      max_age_seconds = 3600
+    }
+  ]
+
+  lifecycle_rules = [
+    {
+      action = {
+        type = "Delete"
+      }
+      condition = {
+        age = 90 # Auto-delete old dev uploads after 90 days
       }
     }
   ]

@@ -44,3 +44,8 @@ output "github_actions_workload_identity_provider" {
   description = "Workload Identity Provider (GCP_WORKLOAD_IDENTITY_PROVIDER_DEV)"
   value       = module.github_actions_workload_identity.workload_identity_provider
 }
+
+output "user_uploads_bucket" {
+  description = "GCS bucket for user uploads (GCS_BUCKET_NAME)"
+  value       = module.user_uploads.name
+}
