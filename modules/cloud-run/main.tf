@@ -69,6 +69,12 @@ variable "min_instances" {
   default     = 0
 }
 
+variable "env_vars" {
+  description = "Map of plain (non-secret) environment variable names to values"
+  type        = map(string)
+  default     = {}
+}
+
 variable "secrets" {
   description = "Map of environment variable names to secret names"
   type        = map(string)
@@ -134,6 +140,15 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "ALLOWED_ORIGINS"
         value = var.allowed_origins
+      }
+
+      # Plain environment variables (non-secret config)
+      dynamic "env" {
+        for_each = var.env_vars
+        content {
+          name  = env.key
+          value = env.value
+        }
       }
 
       # Secret environment variables

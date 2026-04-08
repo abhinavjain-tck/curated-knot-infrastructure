@@ -60,7 +60,8 @@ module "api_service_account" {
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",
-    "roles/storage.objectAdmin", # GCS signed URL generation + object management
+    "roles/storage.objectAdmin",              # GCS signed URL generation + object management
+    "roles/iam.serviceAccountTokenCreator",   # Required for signing GCS URLs (signBlob)
   ]
 
   depends_on = [google_project_service.apis]
@@ -156,6 +157,11 @@ module "cloud_run_api" {
   memory        = "512Mi"
   max_instances = 5 # Lower limit for development
   min_instances = 0 # Scale to zero when not in use (SAVES MONEY!)
+
+  env_vars = {
+    GCS_BUCKET_NAME = module.user_uploads.name
+    GCS_PROJECT_ID  = var.project_id
+  }
 
   secrets = {
     DATABASE_URL        = "database-url"
