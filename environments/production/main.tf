@@ -58,10 +58,18 @@ module "api_service_account" {
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",
-    "roles/storage.objectAdmin", # GCS signed URL generation + object management
   ]
 
   depends_on = [google_project_service.apis]
+}
+
+# Grant storage.objectAdmin scoped to the uploads bucket only (not project-wide)
+resource "google_storage_bucket_iam_member" "api_uploads_admin" {
+  bucket = module.user_uploads.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${module.api_service_account.email}"
+
+  depends_on = [module.api_service_account, module.user_uploads]
 }
 
 # Allow the API SA to sign its own blobs (required for GCS V4 signed URLs).
