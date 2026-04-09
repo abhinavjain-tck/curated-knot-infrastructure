@@ -60,11 +60,20 @@ module "api_service_account" {
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",
-    "roles/storage.objectAdmin",            # GCS signed URL generation + object management
-    "roles/iam.serviceAccountTokenCreator", # Required for signing GCS URLs (signBlob)
+    "roles/storage.objectAdmin", # GCS signed URL generation + object management
   ]
 
   depends_on = [google_project_service.apis]
+}
+
+# Allow the API SA to sign its own blobs (required for GCS V4 signed URLs).
+# Scoped to the SA itself, NOT project-wide — prevents impersonation of other SAs.
+resource "google_service_account_iam_member" "api_self_sign" {
+  service_account_id = module.api_service_account.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${module.api_service_account.email}"
+
+  depends_on = [module.api_service_account]
 }
 
 # Workload Identity Federation for GitHub Actions

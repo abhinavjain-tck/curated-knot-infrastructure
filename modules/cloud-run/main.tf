@@ -70,7 +70,7 @@ variable "min_instances" {
 }
 
 variable "env_vars" {
-  description = "Map of plain (non-secret) environment variable names to values"
+  description = "Map of plain (non-secret) environment variable names to values. Caller must avoid collisions with static vars (NODE_ENV, ENVIRONMENT, ALLOWED_ORIGINS) and secrets."
   type        = map(string)
   default     = {}
 }
