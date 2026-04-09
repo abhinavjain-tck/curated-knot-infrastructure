@@ -39,3 +39,8 @@ output "github_actions_service_account" {
   description = "GitHub Actions service account email"
   value       = module.github_actions_service_account.email
 }
+
+output "user_uploads_bucket" {
+  description = "GCS bucket for user uploads (GCS_BUCKET_NAME)"
+  value       = module.user_uploads.name
+}
