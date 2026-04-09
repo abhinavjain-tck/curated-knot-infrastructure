@@ -60,8 +60,8 @@ module "api_service_account" {
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
     "roles/monitoring.metricWriter",
-    "roles/storage.objectAdmin",              # GCS signed URL generation + object management
-    "roles/iam.serviceAccountTokenCreator",   # Required for signing GCS URLs (signBlob)
+    "roles/storage.objectAdmin",            # GCS signed URL generation + object management
+    "roles/iam.serviceAccountTokenCreator", # Required for signing GCS URLs (signBlob)
   ]
 
   depends_on = [google_project_service.apis]
