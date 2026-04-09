@@ -36,6 +36,7 @@ resource "google_project_service" "apis" {
     "cloudbuild.googleapis.com",
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
+    "storage.googleapis.com",
   ])
 
   project = var.project_id
@@ -62,6 +63,25 @@ module "api_service_account" {
   depends_on = [google_project_service.apis]
 }
 
+# Grant storage.objectAdmin scoped to the uploads bucket only (not project-wide)
+resource "google_storage_bucket_iam_member" "api_uploads_admin" {
+  bucket = module.user_uploads.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${module.api_service_account.email}"
+
+  depends_on = [module.api_service_account, module.user_uploads]
+}
+
+# Allow the API SA to sign its own blobs (required for GCS V4 signed URLs).
+# Scoped to the SA itself, NOT project-wide.
+resource "google_service_account_iam_member" "api_self_sign" {
+  service_account_id = module.api_service_account.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${module.api_service_account.email}"
+
+  depends_on = [module.api_service_account]
+}
+
 # Service Account for GitHub Actions
 module "github_actions_service_account" {
   source = "../../modules/service-account"
@@ -74,6 +94,7 @@ module "github_actions_service_account" {
     "roles/iam.serviceAccountUser",
     "roles/artifactregistry.writer",
     "roles/storage.admin",
+    "roles/iam.roleAdmin", # Required for Terraform to manage custom IAM roles
   ]
 
   depends_on = [google_project_service.apis]
@@ -147,6 +168,11 @@ module "cloud_run_api" {
   max_instances = 20 # Higher limit for production
   min_instances = 1  # Keep at least 1 instance warm for production
 
+  env_vars = {
+    GCS_BUCKET_NAME = module.user_uploads.name
+    GCS_PROJECT_ID  = var.project_id
+  }
+
   secrets = {
     DATABASE_URL        = "database-url"
     PRISMA_DATABASE_URL = "prisma-database-url"
@@ -160,6 +186,7 @@ module "cloud_run_api" {
     module.networking,
     module.cloud_sql,
     google_artifact_registry_repository.images,
+    module.user_uploads,
   ]
 }
 
@@ -176,6 +203,34 @@ module "static_assets" {
   labels                   = {}          # No labels currently
 
   cors = [] # No CORS currently configured
+
+  depends_on = [google_project_service.apis]
+}
+
+# User Uploads Bucket - Wedding images, profile photos, etc.
+module "user_uploads" {
+  source = "../../modules/storage"
+
+  project_id               = var.project_id
+  location                 = upper(var.region)
+  name                     = "${local.name_prefix}-uploads"
+  storage_class            = "STANDARD"
+  versioning_enabled       = false
+  public_access_prevention = "inherited" # Must be inherited for public_read
+  public_read              = true        # Wedding images must be publicly viewable
+  labels                   = local.labels
+
+  cors = [
+    {
+      origin          = ["https://thecuratedknot.com", "https://www.thecuratedknot.com"]
+      method          = ["PUT", "GET", "HEAD"]
+      response_header = ["Content-Type", "Content-Length"]
+      max_age_seconds = 3600
+    }
+  ]
+
+  # No auto-delete lifecycle — wedding photos are permanent
+  lifecycle_rules = []
 
   depends_on = [google_project_service.apis]
 }
