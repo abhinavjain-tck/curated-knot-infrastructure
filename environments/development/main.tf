@@ -66,6 +66,16 @@ module "api_service_account" {
   depends_on = [google_project_service.apis]
 }
 
+# Allow the API SA to sign its own blobs (required for GCS V4 signed URLs).
+# Scoped to the SA itself, NOT project-wide — prevents impersonation of other SAs.
+resource "google_service_account_iam_member" "api_self_sign" {
+  service_account_id = module.api_service_account.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${module.api_service_account.email}"
+
+  depends_on = [module.api_service_account]
+}
+
 # Workload Identity Federation for GitHub Actions
 # This enables GitHub Actions to authenticate to GCP without long-lived credentials
 module "github_actions_workload_identity" {
@@ -156,6 +166,11 @@ module "cloud_run_api" {
   memory        = "512Mi"
   max_instances = 5 # Lower limit for development
   min_instances = 0 # Scale to zero when not in use (SAVES MONEY!)
+
+  env_vars = {
+    GCS_BUCKET_NAME = module.user_uploads.name
+    GCS_PROJECT_ID  = var.project_id
+  }
 
   secrets = {
     DATABASE_URL        = "database-url"
