@@ -126,6 +126,16 @@ module "cloud_sql" {
   instance_name       = "${local.name_prefix}-db"
   database_version    = "POSTGRES_15"
   tier                = "db-f1-micro" # Match existing
+
+  # C6: the default on a shared-core instance is 25, and the budget does not
+  # close at 25 — API (max_instances x Prisma pool) + worker (Prisma + pg-boss)
+  # + the superuser reserve already exceeds it, before apps/web's own
+  # serverless draw. 50 leaves real headroom on 0.6 GB of RAM.
+  #
+  # ⚠️ Changing this RESTARTS the instance. Apply it deliberately.
+  database_flags = {
+    max_connections = "50"
+  }
   disk_size           = 10            # Match existing
   availability_type   = "ZONAL"
   backup_enabled      = true
@@ -167,8 +177,22 @@ module "cloud_run_api" {
 
   cpu           = "1"
   memory        = "512Mi"
-  max_instances = 20 # Higher limit for production
-  min_instances = 1  # Keep at least 1 instance warm for production
+  # C6 connection budget — TERRAFORM OWNS THESE. The deploy workflow no
+  # longer passes --min/--max-instances, so this is the single source of
+  # truth. Before that fix TF said 20/1 and the workflow said 10/0, and the
+  # live value was whichever ran last.
+  #
+  # The sum, against max_connections = 50:
+  #   API      4 instances x 3 (Prisma default on 1 vCPU) = 12
+  #   worker   3 (Prisma) + 5 (pg-boss MAX_POOL_SIZE)     =  8
+  #   reserve  superuser                                  =  3
+  #                                                    total 23  → 27 spare
+  #
+  # The spare is deliberate: apps/web opens its own Prisma pools from Vercel
+  # serverless with no coordination and nobody has measured that draw yet.
+  # Measure it before raising max_instances.
+  max_instances = 4
+  min_instances = 1 # Keep one warm — production cold starts are user-facing
 
   env_vars = {
     GCS_BUCKET_NAME = module.user_uploads.name

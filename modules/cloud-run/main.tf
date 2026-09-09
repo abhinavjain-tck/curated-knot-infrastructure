@@ -267,6 +267,18 @@ resource "google_cloud_run_v2_service" "api" {
   }
 
   lifecycle {
+    # ONLY the image is ignored, and that is deliberate.
+    #
+    # CI owns the image tag (it changes every deploy, and terraform must not
+    # fight it). Everything else — scaling especially — is terraform's, so it
+    # is NOT listed here: a `plan` after a deploy SHOULD show a diff if
+    # something moved the scaling out of band, and `apply` should put it back.
+    #
+    # Do NOT add `template[0].scaling` here to silence such a diff. That would
+    # make a stray `gcloud run deploy --max-instances` win permanently and
+    # silently, which is the bug this workstream just removed: TF said
+    # min 1 / max 20 and the workflow said min 0 / max 10, and the live value
+    # was whichever ran last. The diff is the alarm, not the problem.
     ignore_changes = [
       template[0].containers[0].image,
       client,

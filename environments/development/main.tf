@@ -126,6 +126,16 @@ module "cloud_sql" {
   instance_name       = "${local.name_prefix}-db"
   database_version    = "POSTGRES_15"
   tier                = "db-f1-micro" # Smallest tier (~$7/month) for development
+
+  # C6: the default on a shared-core instance is 25, and the budget does not
+  # close at 25 — API (max_instances x Prisma pool) + worker (Prisma + pg-boss)
+  # + the superuser reserve already exceeds it, before apps/web's own
+  # serverless draw. 50 leaves real headroom on 0.6 GB of RAM.
+  #
+  # ⚠️ Changing this RESTARTS the instance. Apply it deliberately.
+  database_flags = {
+    max_connections = "50"
+  }
   disk_size           = 10            # Minimal disk for dev
   availability_type   = "ZONAL"       # No HA needed for dev
   backup_enabled      = true
@@ -166,8 +176,10 @@ module "cloud_run_api" {
 
   cpu           = "1"
   memory        = "512Mi"
-  max_instances = 5 # Lower limit for development
-  min_instances = 0 # Scale to zero when not in use (SAVES MONEY!)
+  # C6 connection budget — TERRAFORM OWNS THESE (see the production comment).
+  #   API 3 x 3 = 9 + worker 8 + reserve 3 = 20, against max_connections = 50.
+  max_instances = 3
+  min_instances = 0 # Scale to zero when idle (SAVES MONEY!)
 
   env_vars = {
     GCS_BUCKET_NAME = module.user_uploads.name
