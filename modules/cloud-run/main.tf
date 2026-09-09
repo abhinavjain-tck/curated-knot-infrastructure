@@ -87,17 +87,73 @@ variable "allow_unauthenticated" {
   default     = true
 }
 
+# ─── Worker support (comms C1) ──────────────────────────────────────────────
+# Every default below MATCHES the value this module hardcoded before, so
+# `terraform plan` on the two live API services is a no-diff. That no-diff is
+# the acceptance criterion — a changed default here is a silent production
+# change to both API services.
+
+variable "args" {
+  description = <<-EOT
+    Overrides the image's CMD (Docker semantics: `args` = CMD, `command` =
+    ENTRYPOINT). Used by the comms worker to run `dist/worker.js` from the
+    SAME image as the API.
+
+    Deliberately overrides CMD and NOT ENTRYPOINT: the Dockerfile's
+    `ENTRYPOINT ["dumb-init", "--"]` is what forwards SIGTERM to node, and the
+    worker's graceful drain depends on it. Setting `command` would drop
+    dumb-init and make node PID 1.
+
+    Empty list = omit the attribute entirely (see the dynamic block below).
+    Cloud Run reads an EXPLICIT empty list as "clear the image's CMD", which
+    would leave the API running `dumb-init --` with no program.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "command" {
+  description = "Overrides the image's ENTRYPOINT. Escape hatch only — the worker leaves this empty so dumb-init survives. Same empty-list semantics as `args`."
+  type        = list(string)
+  default     = []
+}
+
+variable "cpu_idle" {
+  description = <<-EOT
+    false = CPU always allocated. Default true preserves the API's
+    request-scoped billing.
+
+    The comms worker MUST set false: it is a poller, and with cpu_idle=true
+    Cloud Run throttles it to ~1% CPU between requests, so the queue barely
+    drains (comms 02 §7.3 records this as a known trap).
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "ingress" {
+  description = "Ingress setting. Default matches the value this module hardcoded. Note this is orthogonal to `allow_unauthenticated`: ingress controls who can reach the service, IAM controls who may invoke it."
+  type        = string
+  default     = "INGRESS_TRAFFIC_ALL"
+}
+
+variable "max_request_concurrency" {
+  description = "Concurrent requests per instance. Default 80 matches the previous hardcoded value; the worker serves only /health so it uses 1."
+  type        = number
+  default     = 80
+}
+
 resource "google_cloud_run_v2_service" "api" {
   name     = var.service_name
   location = var.region
   project  = var.project_id
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  ingress  = var.ingress
 
   template {
     service_account = var.service_account_email
     timeout         = "300s"
 
-    max_instance_request_concurrency = 80
+    max_instance_request_concurrency = var.max_request_concurrency
 
     scaling {
       min_instance_count = var.min_instances
@@ -107,13 +163,24 @@ resource "google_cloud_run_v2_service" "api" {
     containers {
       image = var.image
 
+      # NULL when empty, deliberately. `command` and `args` are optional LIST
+      # ATTRIBUTES (not blocks) in provider 5.x, and Terraform omits an
+      # attribute set to null — which keeps the image's own ENTRYPOINT/CMD in
+      # force and makes the two live API services a plan no-diff.
+      #
+      # Passing the list directly would emit `args = []`, and Cloud Run reads
+      # an EXPLICIT empty list as "clear the image's CMD": both API services
+      # would then run `dumb-init --` with no program and crash-loop.
+      command = length(var.command) > 0 ? var.command : null
+      args    = length(var.args) > 0 ? var.args : null
+
       ports {
         container_port = 8080
         name           = "http1"
       }
 
       resources {
-        cpu_idle          = true
+        cpu_idle          = var.cpu_idle
         startup_cpu_boost = true
         limits = {
           cpu    = var.cpu

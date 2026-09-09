@@ -39,6 +39,8 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "storage.googleapis.com",
+    # C7: the worker uptime check + log-based paralysis alert.
+    "monitoring.googleapis.com",
   ])
 
   project = var.project_id
@@ -258,3 +260,118 @@ module "user_uploads" {
 
   depends_on = [google_project_service.apis]
 }
+
+# ─── Cloud Run Comms Worker ────────────────────────────────────────────────
+#
+# The ONLY process that runs pg-boss (comms 02 §7.3). Same image as the API,
+# different container command.
+#
+# `args` overrides the image's CMD and leaves its ENTRYPOINT (`dumb-init --`)
+# in place on purpose: dumb-init is what forwards SIGTERM to node, and the
+# worker's graceful drain — "deploy during an in-flight send: zero stranded
+# rows" — depends on receiving it.
+#
+# TF owns the SHAPE of this service; CI only pushes the image tag (C3). Do not
+# add --set-secrets or --args to the deploy workflow for the worker: unlike the
+# API, whose secrets live in the workflow, this service's secrets live here.
+module "cloud_run_worker" {
+  source = "../../modules/cloud-run"
+
+  project_id            = var.project_id
+  region                = var.region
+  service_name          = "${local.name_prefix}-comms-worker"
+  image                 = "gcr.io/cloudrun/hello" # CI replaces this (C3)
+  service_account_email = module.api_service_account.email
+  vpc_connector_id      = module.networking.vpc_connector_id
+  cloud_sql_connection  = module.cloud_sql.connection_name
+  environment           = var.environment
+
+  args = ["node", "dist/worker.js"]
+
+  # Not an HTTP server beyond /health. Empty rather than making a
+  # security-relevant variable optional for the two live API services;
+  # nothing the worker runs reads ALLOWED_ORIGINS.
+  allowed_origins = ""
+
+  # /health is public so Cloud Monitoring's uptime checkers can reach it.
+  # Cloud Run IAM is per-SERVICE, not per-path, so the alternative is a
+  # permanently-failing uptime check — an alert everyone learns to ignore,
+  # which is the failure C7 exists to prevent. The route returns
+  # {"status","role"} and nothing else; worker.ts 404s every other path.
+  allow_unauthenticated = true
+
+  # One instance, always. Two would mean two pg-boss pollers: double the
+  # connection draw (C6) and two independent ESP token buckets instead of one.
+  max_instances = 1
+
+  # DEV ONLY: scale to zero and let the CPU throttle. Saves the standing cost,
+  # and dev accepts late drains.
+  #
+  # ⚠️ This means dev exhibits the very throttling the worker exists to avoid,
+  # so A7's "zero stranded rows on deploy" criterion is NOT verifiable here.
+  # Verify that one locally against real Postgres, or flip these two values
+  # temporarily for the verification window.
+  min_instances = 0
+  cpu_idle      = true
+
+  cpu    = "1"
+  memory = "512Mi" # Boots the full Nest DI container, same as the API
+
+  # Serves only /health; 80 is meaningless for a non-server.
+  max_request_concurrency = 1
+
+  env_vars = {
+    # Without this the email module binds the STUB provider: the worker would
+    # drain the queue and send nothing while reporting success.
+    EMAIL_PROVIDER     = "resend"
+    EMAIL_FROM_ADDRESS = "hello@send.thecuratedknot.com"
+    EMAIL_FROM_NAME    = "The Curated Knot"
+    # StorageModule boots as part of AppModule.
+    GCS_BUCKET_NAME = module.user_uploads.name
+    GCS_PROJECT_ID  = var.project_id
+  }
+
+  # Names only — values live in Secret Manager, created out of band.
+  # A referenced secret that does not exist fails the revision at CREATE time,
+  # which is the loud failure you want.
+  secrets = {
+    DATABASE_URL                 = "database-url"
+    PRISMA_DATABASE_URL          = "prisma-database-url"
+    SENTRY_DSN                   = "sentry-dsn"
+    API_JWT_SECRET               = "api-jwt-secret"
+    RESEND_API_KEY               = "resend-api-key"
+    RESEND_WEBHOOK_SECRET        = "resend-webhook-secret"
+    COMMS_RECIPIENT_HASH_PEPPERS = "comms-recipient-hash-peppers"
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.api_service_account,
+    module.networking,
+    module.cloud_sql,
+    google_artifact_registry_repository.images,
+    module.user_uploads,
+  ]
+}
+
+# ─── Worker Liveness Monitoring (comms C7) ─────────────────────────────────
+#
+# The one detection path that survives worker death: the reconciler and the
+# FAILED-spike alert both run INSIDE the worker, so nothing in-process can
+# report that the worker is gone.
+module "worker_monitoring" {
+  source = "../../modules/monitoring"
+
+  project_id          = var.project_id
+  environment         = var.environment
+  worker_service_name = "${local.name_prefix}-comms-worker"
+  # The uptime check's monitored_resource wants a bare host, no scheme.
+  worker_host = replace(module.cloud_run_worker.service_url, "https://", "")
+  alert_email = var.alert_email
+
+  depends_on = [
+    google_project_service.apis,
+    module.cloud_run_worker,
+  ]
+}
+
