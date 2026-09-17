@@ -33,6 +33,10 @@ on:
           - development
           - production
           - both
+      unlock_lock_id:
+        description: 'Stale state lock ID to force-unlock (leave empty for a normal run)'
+        required: false
+        type: string
 
 concurrency:
   group: terraform-${{ github.ref }}-${{ github.event.inputs.environment || 'auto' }}
@@ -282,8 +286,15 @@ jobs:
         id: plan
         working-directory: environments/development
         run: |
+          set +e
           terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
-          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          # $? here is tee's, which is always 0 — that is how a plan that failed
+          # on a state lock reported success. -detailed-exitcode: 0 = no changes,
+          # 2 = changes to apply, 1 = the plan actually failed.
+          code=${PIPESTATUS[0]}
+          echo "exitcode=$code" >> $GITHUB_OUTPUT
+          [ "$code" = "1" ] && exit 1
+          exit 0
         continue-on-error: true
         env:
           # alert_email has no default on purpose. Without a value terraform
@@ -373,8 +384,15 @@ jobs:
         id: plan
         working-directory: environments/production
         run: |
+          set +e
           terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
-          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          # $? here is tee's, which is always 0 — that is how a plan that failed
+          # on a state lock reported success. -detailed-exitcode: 0 = no changes,
+          # 2 = changes to apply, 1 = the plan actually failed.
+          code=${PIPESTATUS[0]}
+          echo "exitcode=$code" >> $GITHUB_OUTPUT
+          [ "$code" = "1" ] && exit 1
+          exit 0
         continue-on-error: true
         env:
           # alert_email has no default on purpose. Without a value terraform
@@ -556,3 +574,39 @@ jobs:
 
               *Triggered by: @${{ github.actor }}*`
             });
+
+  terraform-unlock:
+    name: Force-unlock stale state
+    # Only ever runs when a lock id is typed into the manual dispatch form. A
+    # killed run leaves its lock behind in the state bucket, and every later plan
+    # then fails on it; nobody can clear it without these credentials.
+    if: github.event_name == 'workflow_dispatch' && inputs.unlock_lock_id != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.TERRAFORM_SERVICE_ACCOUNT }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Terraform Init
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform init -input=false
+
+      - name: Force-unlock
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform force-unlock -force "${{ inputs.unlock_lock_id }}"
