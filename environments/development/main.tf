@@ -97,6 +97,13 @@ module "github_actions_workload_identity" {
     "roles/iam.roleAdmin",                 # Required for Terraform to manage custom IAM roles
     "roles/cloudsql.client",
     "roles/artifactregistry.writer",
+    # C7 needs both: uptime checks, alert policies and notification channels come
+    # from monitoring.editor; the log-based metric behind the paralysis alert
+    # needs logging.configWriter. Granted by hand in development on 2026-09-17
+    # after the apply failed 403 on all three — declared here so production does
+    # not hit the same wall, and so the next person can see why they exist.
+    "roles/monitoring.editor",
+    "roles/logging.configWriter",
   ]
 
   depends_on = [google_project_service.apis]
