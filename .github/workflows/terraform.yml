@@ -602,6 +602,11 @@ jobs:
     # then fails on it; nobody can clear it without these credentials.
     if: github.event_name == 'workflow_dispatch' && inputs.unlock_lock_id != ''
     runs-on: ubuntu-latest
+    # Same GitHub environment the plan jobs use. Without it the OIDC token
+    # carries no environment claim, workload identity hands back credentials
+    # that cannot read the state bucket, and init fails before unlock is
+    # even attempted.
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
