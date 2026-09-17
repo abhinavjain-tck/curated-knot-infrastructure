@@ -186,11 +186,29 @@ module "cloud_run_api" {
     GCS_PROJECT_ID  = var.project_id
   }
 
+  # ⚠️ This map and the app repo's `--set-secrets` list in
+  # .github/workflows/_deploy-cloud-run.yml must hold the SAME set. Each one
+  # REPLACES the whole set on the service, so anything missing from either is
+  # deleted from the running revision by whichever ran last. The four entries
+  # that used to be here left the other seven out, and a plan on production
+  # showed terraform removing them — INTERNAL_API_SECRET (the web -> API
+  # internal endpoint, which fails closed), SITE_ACCESS_SECRET (password
+  # protected wedding sites, also fails closed) and the Slack webhooks.
+  #
+  # SLACK_WEBHOOK_COMMS_OPS is deliberately NOT here yet: the secret does not
+  # exist, and a reference to a missing secret fails the revision at create
+  # time. It joins this map with THE-100, alongside the worker's copy.
   secrets = {
-    DATABASE_URL        = "database-url"
-    PRISMA_DATABASE_URL = "prisma-database-url"
-    SENTRY_DSN          = "sentry-dsn"
-    API_JWT_SECRET      = "api-jwt-secret"
+    DATABASE_URL                      = "database-url"
+    PRISMA_DATABASE_URL               = "prisma-database-url"
+    SENTRY_DSN                        = "sentry-dsn"
+    API_JWT_SECRET                    = "api-jwt-secret"
+    INTERNAL_API_SECRET               = "internal-api-secret"
+    SITE_ACCESS_SECRET                = "site-access-secret"
+    SLACK_WEBHOOK_USER_SIGNUP         = "slack-webhook-user-signup"
+    SLACK_WEBHOOK_ONBOARDING_COMPLETE = "slack-webhook-onboarding-complete"
+    SLACK_WEBHOOK_WEBSITE_PUBLISHED   = "slack-webhook-website-published"
+    SLACK_WEBHOOK_RSVP_SUBMISSION     = "slack-webhook-rsvp-submitted"
   }
 
   depends_on = [
