@@ -214,8 +214,8 @@ module "cloud_run_api" {
     SLACK_WEBHOOK_ONBOARDING_COMPLETE = "slack-webhook-onboarding-complete"
     SLACK_WEBHOOK_WEBSITE_PUBLISHED   = "slack-webhook-website-published"
     SLACK_WEBHOOK_RSVP_SUBMISSION     = "slack-webhook-rsvp-submitted"
-    # On the live service here too, though absent from the deploy workflow's
-    # list — so the next API deploy drops it. Raised separately.
+    # develop's deploy workflow sets this; the comms trunk's copy does not, so
+    # deploying that trunk would drop it. Tracked for the app repo, not here.
     SLACK_WEBHOOK_SUPPORT_TICKET = "slack-webhook-support-ticket"
   }
 

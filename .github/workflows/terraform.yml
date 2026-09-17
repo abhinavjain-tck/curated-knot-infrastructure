@@ -600,7 +600,8 @@ jobs:
     # Only ever runs when a lock id is typed into the manual dispatch form. A
     # killed run leaves its lock behind in the state bucket, and every later plan
     # then fails on it; nobody can clear it without these credentials.
-    if: github.event_name == 'workflow_dispatch' && inputs.unlock_lock_id != ''
+    # "both" is not a directory under environments/, so it cannot be unlocked.
+    if: github.event_name == 'workflow_dispatch' && inputs.unlock_lock_id != '' && inputs.environment != 'both'
     runs-on: ubuntu-latest
     # Same GitHub environment the plan jobs use. Without it the OIDC token
     # carries no environment claim, workload identity hands back credentials
@@ -634,4 +635,8 @@ jobs:
 
       - name: Force-unlock
         working-directory: environments/${{ inputs.environment }}
-        run: terraform force-unlock -force "${{ inputs.unlock_lock_id }}"
+        # Through env, never interpolated into the script: a dispatch input is
+        # attacker-controlled text as far as the shell is concerned.
+        env:
+          LOCK_ID: ${{ inputs.unlock_lock_id }}
+        run: terraform force-unlock -force "$LOCK_ID"
