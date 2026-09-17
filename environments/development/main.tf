@@ -195,13 +195,11 @@ module "cloud_run_api" {
   # internal endpoint, which fails closed), SITE_ACCESS_SECRET (password
   # protected wedding sites, also fails closed) and the Slack webhooks.
   #
-  # SLACK_WEBHOOK_COMMS_OPS is deliberately NOT here yet: the secret does not
-  # exist, and a reference to a missing secret fails the revision at create
-  # time. It joins this map with THE-100, alongside the worker's copy.
   secrets = {
     DATABASE_URL                      = "database-url"
     PRISMA_DATABASE_URL               = "prisma-database-url"
     SENTRY_DSN                        = "sentry-dsn"
+    SLACK_WEBHOOK_COMMS_OPS           = "slack-webhook-comms-ops"
     API_JWT_SECRET                    = "api-jwt-secret"
     INTERNAL_API_SECRET               = "internal-api-secret"
     SITE_ACCESS_SECRET                = "site-access-secret"
@@ -375,6 +373,7 @@ module "cloud_run_worker" {
     RESEND_API_KEY               = "resend-api-key"
     RESEND_WEBHOOK_SECRET        = "resend-webhook-secret"
     COMMS_RECIPIENT_HASH_PEPPERS = "comms-recipient-hash-peppers"
+    SLACK_WEBHOOK_COMMS_OPS      = "slack-webhook-comms-ops"
   }
 
   depends_on = [
