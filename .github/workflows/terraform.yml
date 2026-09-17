@@ -33,6 +33,10 @@ on:
           - development
           - production
           - both
+      unlock_lock_id:
+        description: 'Stale state lock ID to force-unlock (leave empty for a normal run)'
+        required: false
+        type: string
 
 concurrency:
   group: terraform-${{ github.ref }}-${{ github.event.inputs.environment || 'auto' }}
@@ -246,7 +250,7 @@ jobs:
   terraform-plan-development:
     runs-on: ubuntu-latest
     needs: [detect-environments, terraform-validate, get-pr-info, check-comment]
-    if: always() && needs.terraform-validate.result == 'success' && needs.detect-environments.outputs.run_development == 'true'
+    if: always() && inputs.unlock_lock_id == '' && needs.terraform-validate.result == 'success' && needs.detect-environments.outputs.run_development == 'true'
     environment: development
     permissions:
       contents: read
@@ -276,15 +280,29 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/development
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Plan
         id: plan
         working-directory: environments/development
         run: |
-          terraform plan -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
-          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          set +e
+          terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
+          # $? here is tee's, which is always 0 — that is how a plan that failed
+          # on a state lock reported success. -detailed-exitcode: 0 = no changes,
+          # 2 = changes to apply, 1 = the plan actually failed.
+          code=${PIPESTATUS[0]}
+          echo "exitcode=$code" >> $GITHUB_OUTPUT
+          [ "$code" = "1" ] && exit 1
+          exit 0
         continue-on-error: true
+        env:
+          # alert_email has no default on purpose. Without a value terraform
+          # PROMPTS for it, and with no tty the job hangs until it times out —
+          # that is what burned a 17-minute plan job. -input=false turns the
+          # hang into an immediate, readable failure; the secret supplies the
+          # value so it neither hangs nor fails.
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
 
       - name: Comment PR with Development Plan
         if: needs.get-pr-info.outputs.pr_number != ''
@@ -326,11 +344,21 @@ jobs:
           name: tfplan-development
           path: environments/development/tfplan
 
+      - name: Fail if the plan errored
+        # The plan step keeps continue-on-error so the plan comment still posts
+        # on a failure. Without this the job then reports success — which is how
+        # two plans that died on a state lock were reported green.
+        if: steps.plan.outputs.exitcode == '1'
+        run: |
+          echo "terraform plan failed (exit code 1) — see the plan comment on the PR." >&2
+          exit 1
+
+
   # Plan for production environment
   terraform-plan-production:
     runs-on: ubuntu-latest
     needs: [detect-environments, terraform-validate, get-pr-info, check-comment]
-    if: always() && needs.terraform-validate.result == 'success' && needs.detect-environments.outputs.run_production == 'true'
+    if: always() && inputs.unlock_lock_id == '' && needs.terraform-validate.result == 'success' && needs.detect-environments.outputs.run_production == 'true'
     environment: production
     permissions:
       contents: read
@@ -360,15 +388,29 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/production
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Plan
         id: plan
         working-directory: environments/production
         run: |
-          terraform plan -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
-          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          set +e
+          terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
+          # $? here is tee's, which is always 0 — that is how a plan that failed
+          # on a state lock reported success. -detailed-exitcode: 0 = no changes,
+          # 2 = changes to apply, 1 = the plan actually failed.
+          code=${PIPESTATUS[0]}
+          echo "exitcode=$code" >> $GITHUB_OUTPUT
+          [ "$code" = "1" ] && exit 1
+          exit 0
         continue-on-error: true
+        env:
+          # alert_email has no default on purpose. Without a value terraform
+          # PROMPTS for it, and with no tty the job hangs until it times out —
+          # that is what burned a 17-minute plan job. -input=false turns the
+          # hang into an immediate, readable failure; the secret supplies the
+          # value so it neither hangs nor fails.
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
 
       - name: Comment PR with Production Plan
         if: needs.get-pr-info.outputs.pr_number != ''
@@ -410,12 +452,22 @@ jobs:
           name: tfplan-production
           path: environments/production/tfplan
 
+      - name: Fail if the plan errored
+        # The plan step keeps continue-on-error so the plan comment still posts
+        # on a failure. Without this the job then reports success — which is how
+        # two plans that died on a state lock were reported green.
+        if: steps.plan.outputs.exitcode == '1'
+        run: |
+          echo "terraform plan failed (exit code 1) — see the plan comment on the PR." >&2
+          exit 1
+
+
   # Apply to development (on push to main, /apply-dev command, or workflow_dispatch)
   terraform-apply-development:
     runs-on: ubuntu-latest
     needs: [detect-environments, terraform-plan-development, get-pr-info, check-comment]
     if: |
-      always() && needs.terraform-plan-development.result == 'success' && (
+      always() && inputs.unlock_lock_id == '' && needs.terraform-plan-development.result == 'success' && (
         (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect-environments.outputs.run_development == 'true') ||
         (github.event_name == 'issue_comment' && needs.check-comment.outputs.command == 'apply' &&
          (needs.check-comment.outputs.environment == 'development' || needs.check-comment.outputs.environment == 'auto')) ||
@@ -454,7 +506,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/development
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Apply
         working-directory: environments/development
@@ -482,7 +534,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [detect-environments, terraform-plan-production, get-pr-info, check-comment]
     if: |
-      always() && needs.terraform-plan-production.result == 'success' && (
+      always() && inputs.unlock_lock_id == '' && needs.terraform-plan-production.result == 'success' && (
         (github.event_name == 'issue_comment' && needs.check-comment.outputs.command == 'apply' &&
          needs.check-comment.outputs.environment == 'production') ||
         (github.event_name == 'workflow_dispatch' && (github.event.inputs.environment == 'production' || github.event.inputs.environment == 'both'))
@@ -520,7 +572,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/production
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Apply
         working-directory: environments/production
@@ -542,3 +594,49 @@ jobs:
 
               *Triggered by: @${{ github.actor }}*`
             });
+
+  terraform-unlock:
+    name: Force-unlock stale state
+    # Only ever runs when a lock id is typed into the manual dispatch form. A
+    # killed run leaves its lock behind in the state bucket, and every later plan
+    # then fails on it; nobody can clear it without these credentials.
+    # "both" is not a directory under environments/, so it cannot be unlocked.
+    if: github.event_name == 'workflow_dispatch' && inputs.unlock_lock_id != '' && inputs.environment != 'both'
+    runs-on: ubuntu-latest
+    # Same GitHub environment the plan jobs use. Without it the OIDC token
+    # carries no environment claim, workload identity hands back credentials
+    # that cannot read the state bucket, and init fails before unlock is
+    # even attempted.
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.TERRAFORM_SERVICE_ACCOUNT }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Terraform Init
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform init -input=false
+
+      - name: Force-unlock
+        working-directory: environments/${{ inputs.environment }}
+        # Through env, never interpolated into the script: a dispatch input is
+        # attacker-controlled text as far as the shell is concerned.
+        env:
+          LOCK_ID: ${{ inputs.unlock_lock_id }}
+        run: terraform force-unlock -force "$LOCK_ID"

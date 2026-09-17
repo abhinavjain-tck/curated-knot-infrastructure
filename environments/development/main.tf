@@ -39,6 +39,8 @@ resource "google_project_service" "apis" {
     "iam.googleapis.com",
     "iamcredentials.googleapis.com",
     "storage.googleapis.com",
+    # C7: the worker uptime check + log-based paralysis alert.
+    "monitoring.googleapis.com",
   ])
 
   project = var.project_id
@@ -95,6 +97,13 @@ module "github_actions_workload_identity" {
     "roles/iam.roleAdmin",                 # Required for Terraform to manage custom IAM roles
     "roles/cloudsql.client",
     "roles/artifactregistry.writer",
+    # C7 needs both: uptime checks, alert policies and notification channels come
+    # from monitoring.editor; the log-based metric behind the paralysis alert
+    # needs logging.configWriter. Granted by hand in development on 2026-09-17
+    # after the apply failed 403 on all three — declared here so production does
+    # not hit the same wall, and so the next person can see why they exist.
+    "roles/monitoring.editor",
+    "roles/logging.configWriter",
   ]
 
   depends_on = [google_project_service.apis]
@@ -119,13 +128,23 @@ module "networking" {
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
-  project_id          = var.project_id
-  region              = var.region
-  instance_name       = "${local.name_prefix}-db"
-  database_version    = "POSTGRES_15"
-  tier                = "db-f1-micro" # Smallest tier (~$7/month) for development
-  disk_size           = 10            # Minimal disk for dev
-  availability_type   = "ZONAL"       # No HA needed for dev
+  project_id       = var.project_id
+  region           = var.region
+  instance_name    = "${local.name_prefix}-db"
+  database_version = "POSTGRES_15"
+  tier             = "db-f1-micro" # Smallest tier (~$7/month) for development
+
+  # C6: the default on a shared-core instance is 25, and the budget does not
+  # close at 25 — API (max_instances x Prisma pool) + worker (Prisma + pg-boss)
+  # + the superuser reserve already exceeds it, before apps/web's own
+  # serverless draw. 50 leaves real headroom on 0.6 GB of RAM.
+  #
+  # ⚠️ Changing this RESTARTS the instance. Apply it deliberately.
+  database_flags = {
+    max_connections = "50"
+  }
+  disk_size           = 10      # Minimal disk for dev
+  availability_type   = "ZONAL" # No HA needed for dev
   backup_enabled      = true
   retained_backups    = 3             # Fewer backups for dev
   authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
@@ -162,21 +181,49 @@ module "cloud_run_api" {
   allowed_origins       = "https://develop.thecuratedknot.com,https://develop-admin.thecuratedknot.com"
   allow_unauthenticated = true # Public access; app-level JWT auth handles authorization
 
-  cpu           = "1"
-  memory        = "512Mi"
-  max_instances = 5 # Lower limit for development
-  min_instances = 0 # Scale to zero when not in use (SAVES MONEY!)
+  cpu    = "1"
+  memory = "512Mi"
+  # C6 connection budget — TERRAFORM OWNS THESE (see the production comment).
+  #   API 3 x 3 = 9 + worker 8 + reserve 3 = 20, against max_connections = 50.
+  max_instances = 3
+  min_instances = 0 # Scale to zero when idle (SAVES MONEY!)
 
   env_vars = {
     GCS_BUCKET_NAME = module.user_uploads.name
     GCS_PROJECT_ID  = var.project_id
   }
 
+  # ⚠️ This map and the app repo's `--set-secrets` list in
+  # .github/workflows/_deploy-cloud-run.yml must hold the SAME set. Each one
+  # REPLACES the whole set on the service, so anything missing from either is
+  # deleted from the running revision by whichever ran last. The four entries
+  # that used to be here left the other seven out, and a plan on production
+  # showed terraform removing them — INTERNAL_API_SECRET (the web -> API
+  # internal endpoint, which fails closed), SITE_ACCESS_SECRET (password
+  # protected wedding sites, also fails closed) and the Slack webhooks.
+  #
   secrets = {
-    DATABASE_URL        = "database-url"
-    PRISMA_DATABASE_URL = "prisma-database-url"
-    SENTRY_DSN          = "sentry-dsn"
-    API_JWT_SECRET      = "api-jwt-secret"
+    DATABASE_URL            = "database-url"
+    PRISMA_DATABASE_URL     = "prisma-database-url"
+    SENTRY_DSN              = "sentry-dsn"
+    SLACK_WEBHOOK_COMMS_OPS = "slack-webhook-comms-ops"
+    # The API's own comms code needs these: every send hashes the address with
+    # the pepper (fails closed without it), the sync send path calls Resend, and
+    # the webhook controller verifies signatures. They arrive with the comms
+    # trunk; the secrets already exist in both projects.
+    RESEND_API_KEY                    = "resend-api-key"
+    RESEND_WEBHOOK_SECRET             = "resend-webhook-secret"
+    COMMS_RECIPIENT_HASH_PEPPERS      = "comms-recipient-hash-peppers"
+    API_JWT_SECRET                    = "api-jwt-secret"
+    INTERNAL_API_SECRET               = "internal-api-secret"
+    SITE_ACCESS_SECRET                = "site-access-secret"
+    SLACK_WEBHOOK_USER_SIGNUP         = "slack-webhook-user-signup"
+    SLACK_WEBHOOK_ONBOARDING_COMPLETE = "slack-webhook-onboarding-complete"
+    SLACK_WEBHOOK_WEBSITE_PUBLISHED   = "slack-webhook-website-published"
+    SLACK_WEBHOOK_RSVP_SUBMISSION     = "slack-webhook-rsvp-submitted"
+    # develop's deploy workflow sets this; the comms trunk's copy does not, so
+    # deploying that trunk would drop it. Tracked for the app repo, not here.
+    SLACK_WEBHOOK_SUPPORT_TICKET = "slack-webhook-support-ticket"
   }
 
   depends_on = [
@@ -258,3 +305,119 @@ module "user_uploads" {
 
   depends_on = [google_project_service.apis]
 }
+
+# ─── Cloud Run Comms Worker ────────────────────────────────────────────────
+#
+# The ONLY process that runs pg-boss (comms 02 §7.3). Same image as the API,
+# different container command.
+#
+# `args` overrides the image's CMD and leaves its ENTRYPOINT (`dumb-init --`)
+# in place on purpose: dumb-init is what forwards SIGTERM to node, and the
+# worker's graceful drain — "deploy during an in-flight send: zero stranded
+# rows" — depends on receiving it.
+#
+# TF owns the SHAPE of this service; CI only pushes the image tag (C3). Do not
+# add --set-secrets or --args to the deploy workflow for the worker: unlike the
+# API, whose secrets live in the workflow, this service's secrets live here.
+module "cloud_run_worker" {
+  source = "../../modules/cloud-run"
+
+  project_id            = var.project_id
+  region                = var.region
+  service_name          = "${local.name_prefix}-comms-worker"
+  image                 = "gcr.io/cloudrun/hello" # CI replaces this (C3)
+  service_account_email = module.api_service_account.email
+  vpc_connector_id      = module.networking.vpc_connector_id
+  cloud_sql_connection  = module.cloud_sql.connection_name
+  environment           = var.environment
+
+  args = ["node", "dist/worker.js"]
+
+  # Not an HTTP server beyond /health. Empty rather than making a
+  # security-relevant variable optional for the two live API services;
+  # nothing the worker runs reads ALLOWED_ORIGINS.
+  allowed_origins = ""
+
+  # /health is public so Cloud Monitoring's uptime checkers can reach it.
+  # Cloud Run IAM is per-SERVICE, not per-path, so the alternative is a
+  # permanently-failing uptime check — an alert everyone learns to ignore,
+  # which is the failure C7 exists to prevent. The route returns
+  # {"status","role"} and nothing else; worker.ts 404s every other path.
+  allow_unauthenticated = true
+
+  # One instance, always. Two would mean two pg-boss pollers: double the
+  # connection draw (C6) and two independent ESP token buckets instead of one.
+  max_instances = 1
+
+  # DEV ONLY: scale to zero and let the CPU throttle. Saves the standing cost,
+  # and dev accepts late drains.
+  #
+  # ⚠️ This means dev exhibits the very throttling the worker exists to avoid,
+  # so A7's "zero stranded rows on deploy" criterion is NOT verifiable here.
+  # Verify that one locally against real Postgres, or flip these two values
+  # temporarily for the verification window.
+  min_instances = 0
+  cpu_idle      = true
+
+  cpu    = "1"
+  memory = "512Mi" # Boots the full Nest DI container, same as the API
+
+  # Serves only /health; 80 is meaningless for a non-server.
+  max_request_concurrency = 1
+
+  env_vars = {
+    # Without this the email module binds the STUB provider: the worker would
+    # drain the queue and send nothing while reporting success.
+    EMAIL_PROVIDER     = "resend"
+    EMAIL_FROM_ADDRESS = "hello@send.thecuratedknot.com"
+    EMAIL_FROM_NAME    = "The Curated Knot"
+    # StorageModule boots as part of AppModule.
+    GCS_BUCKET_NAME = module.user_uploads.name
+    GCS_PROJECT_ID  = var.project_id
+  }
+
+  # Names only — values live in Secret Manager, created out of band.
+  # A referenced secret that does not exist fails the revision at CREATE time,
+  # which is the loud failure you want.
+  secrets = {
+    DATABASE_URL                 = "database-url"
+    PRISMA_DATABASE_URL          = "prisma-database-url"
+    SENTRY_DSN                   = "sentry-dsn"
+    API_JWT_SECRET               = "api-jwt-secret"
+    RESEND_API_KEY               = "resend-api-key"
+    RESEND_WEBHOOK_SECRET        = "resend-webhook-secret"
+    COMMS_RECIPIENT_HASH_PEPPERS = "comms-recipient-hash-peppers"
+    SLACK_WEBHOOK_COMMS_OPS      = "slack-webhook-comms-ops"
+  }
+
+  depends_on = [
+    google_project_service.apis,
+    module.api_service_account,
+    module.networking,
+    module.cloud_sql,
+    google_artifact_registry_repository.images,
+    module.user_uploads,
+  ]
+}
+
+# ─── Worker Liveness Monitoring (comms C7) ─────────────────────────────────
+#
+# The one detection path that survives worker death: the reconciler and the
+# FAILED-spike alert both run INSIDE the worker, so nothing in-process can
+# report that the worker is gone.
+module "worker_monitoring" {
+  source = "../../modules/monitoring"
+
+  project_id          = var.project_id
+  environment         = var.environment
+  worker_service_name = "${local.name_prefix}-comms-worker"
+  # The uptime check's monitored_resource wants a bare host, no scheme.
+  worker_host = replace(module.cloud_run_worker.service_url, "https://", "")
+  alert_email = var.alert_email
+
+  depends_on = [
+    google_project_service.apis,
+    module.cloud_run_worker,
+  ]
+}
+

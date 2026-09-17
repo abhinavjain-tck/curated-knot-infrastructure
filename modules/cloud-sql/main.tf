@@ -63,6 +63,18 @@ variable "authorized_networks" {
   default     = []
 }
 
+variable "database_flags" {
+  description = <<-EOT
+    Postgres flags as name => value.
+
+    ⚠️ Some flags — `max_connections` among them — RESTART the instance when
+    changed. Applying a change here is a brief outage, not a no-op, so plan it
+    like one.
+  EOT
+  type        = map(string)
+  default     = {}
+}
+
 variable "labels" {
   description = "Labels to apply to the instance"
   type        = map(string)
@@ -84,6 +96,15 @@ resource "google_sql_database_instance" "main" {
     disk_type         = "PD_SSD"
     edition           = "ENTERPRISE"
     pricing_plan      = "PER_USE"
+
+    # Empty map emits no blocks, so existing instances are a plan no-diff.
+    dynamic "database_flags" {
+      for_each = var.database_flags
+      content {
+        name  = database_flags.key
+        value = database_flags.value
+      }
+    }
 
     backup_configuration {
       enabled                        = var.backup_enabled
