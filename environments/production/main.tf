@@ -97,6 +97,12 @@ module "github_actions_service_account" {
     "roles/artifactregistry.writer",
     "roles/storage.admin",
     "roles/iam.roleAdmin", # Required for Terraform to manage custom IAM roles
+    # C7 needs both: uptime checks, alert policies and notification channels come
+    # from monitoring.editor; the log-based metric behind the paralysis alert
+    # needs logging.configWriter. Development's apply failed 403 on all three
+    # before these were granted by hand, so production declares them up front.
+    "roles/monitoring.editor",
+    "roles/logging.configWriter",
   ]
 
   depends_on = [google_project_service.apis]
