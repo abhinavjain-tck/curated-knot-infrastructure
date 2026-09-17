@@ -344,6 +344,16 @@ jobs:
           name: tfplan-development
           path: environments/development/tfplan
 
+      - name: Fail if the plan errored
+        # The plan step keeps continue-on-error so the plan comment still posts
+        # on a failure. Without this the job then reports success — which is how
+        # two plans that died on a state lock were reported green.
+        if: steps.plan.outputs.exitcode == '1'
+        run: |
+          echo "terraform plan failed (exit code 1) — see the plan comment on the PR." >&2
+          exit 1
+
+
   # Plan for production environment
   terraform-plan-production:
     runs-on: ubuntu-latest
@@ -441,6 +451,16 @@ jobs:
         with:
           name: tfplan-production
           path: environments/production/tfplan
+
+      - name: Fail if the plan errored
+        # The plan step keeps continue-on-error so the plan comment still posts
+        # on a failure. Without this the job then reports success — which is how
+        # two plans that died on a state lock were reported green.
+        if: steps.plan.outputs.exitcode == '1'
+        run: |
+          echo "terraform plan failed (exit code 1) — see the plan comment on the PR." >&2
+          exit 1
+
 
   # Apply to development (on push to main, /apply-dev command, or workflow_dispatch)
   terraform-apply-development:
