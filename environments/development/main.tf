@@ -209,6 +209,9 @@ module "cloud_run_api" {
     SLACK_WEBHOOK_ONBOARDING_COMPLETE = "slack-webhook-onboarding-complete"
     SLACK_WEBHOOK_WEBSITE_PUBLISHED   = "slack-webhook-website-published"
     SLACK_WEBHOOK_RSVP_SUBMISSION     = "slack-webhook-rsvp-submitted"
+    # On the live service here too, though absent from the deploy workflow's
+    # list — so the next API deploy drops it. Raised separately.
+    SLACK_WEBHOOK_SUPPORT_TICKET = "slack-webhook-support-ticket"
   }
 
   depends_on = [
