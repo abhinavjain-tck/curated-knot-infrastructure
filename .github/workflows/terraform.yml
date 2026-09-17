@@ -276,15 +276,22 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/development
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Plan
         id: plan
         working-directory: environments/development
         run: |
-          terraform plan -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
+          terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
           echo "exitcode=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
+        env:
+          # alert_email has no default on purpose. Without a value terraform
+          # PROMPTS for it, and with no tty the job hangs until it times out —
+          # that is what burned a 17-minute plan job. -input=false turns the
+          # hang into an immediate, readable failure; the secret supplies the
+          # value so it neither hangs nor fails.
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
 
       - name: Comment PR with Development Plan
         if: needs.get-pr-info.outputs.pr_number != ''
@@ -360,15 +367,22 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/production
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Plan
         id: plan
         working-directory: environments/production
         run: |
-          terraform plan -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
+          terraform plan -input=false -no-color -out=tfplan -detailed-exitcode 2>&1 | tee plan_output.txt
           echo "exitcode=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
+        env:
+          # alert_email has no default on purpose. Without a value terraform
+          # PROMPTS for it, and with no tty the job hangs until it times out —
+          # that is what burned a 17-minute plan job. -input=false turns the
+          # hang into an immediate, readable failure; the secret supplies the
+          # value so it neither hangs nor fails.
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
 
       - name: Comment PR with Production Plan
         if: needs.get-pr-info.outputs.pr_number != ''
@@ -454,7 +468,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/development
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Apply
         working-directory: environments/development
@@ -520,7 +534,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: environments/production
-        run: terraform init
+        run: terraform init -input=false
 
       - name: Terraform Apply
         working-directory: environments/production
