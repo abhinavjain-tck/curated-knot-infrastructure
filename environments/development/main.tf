@@ -121,11 +121,11 @@ module "networking" {
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
-  project_id          = var.project_id
-  region              = var.region
-  instance_name       = "${local.name_prefix}-db"
-  database_version    = "POSTGRES_15"
-  tier                = "db-f1-micro" # Smallest tier (~$7/month) for development
+  project_id       = var.project_id
+  region           = var.region
+  instance_name    = "${local.name_prefix}-db"
+  database_version = "POSTGRES_15"
+  tier             = "db-f1-micro" # Smallest tier (~$7/month) for development
 
   # C6: the default on a shared-core instance is 25, and the budget does not
   # close at 25 — API (max_instances x Prisma pool) + worker (Prisma + pg-boss)
@@ -136,8 +136,8 @@ module "cloud_sql" {
   database_flags = {
     max_connections = "50"
   }
-  disk_size           = 10            # Minimal disk for dev
-  availability_type   = "ZONAL"       # No HA needed for dev
+  disk_size           = 10      # Minimal disk for dev
+  availability_type   = "ZONAL" # No HA needed for dev
   backup_enabled      = true
   retained_backups    = 3             # Fewer backups for dev
   authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
@@ -174,8 +174,8 @@ module "cloud_run_api" {
   allowed_origins       = "https://develop.thecuratedknot.com,https://develop-admin.thecuratedknot.com"
   allow_unauthenticated = true # Public access; app-level JWT auth handles authorization
 
-  cpu           = "1"
-  memory        = "512Mi"
+  cpu    = "1"
+  memory = "512Mi"
   # C6 connection budget — TERRAFORM OWNS THESE (see the production comment).
   #   API 3 x 3 = 9 + worker 8 + reserve 3 = 20, against max_connections = 50.
   max_instances = 3

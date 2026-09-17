@@ -121,11 +121,11 @@ module "networking" {
 module "cloud_sql" {
   source = "../../modules/cloud-sql"
 
-  project_id          = var.project_id
-  region              = var.region
-  instance_name       = "${local.name_prefix}-db"
-  database_version    = "POSTGRES_15"
-  tier                = "db-f1-micro" # Match existing
+  project_id       = var.project_id
+  region           = var.region
+  instance_name    = "${local.name_prefix}-db"
+  database_version = "POSTGRES_15"
+  tier             = "db-f1-micro" # Match existing
 
   # C6: the default on a shared-core instance is 25, and the budget does not
   # close at 25 — API (max_instances x Prisma pool) + worker (Prisma + pg-boss)
@@ -136,7 +136,7 @@ module "cloud_sql" {
   database_flags = {
     max_connections = "50"
   }
-  disk_size           = 10            # Match existing
+  disk_size           = 10 # Match existing
   availability_type   = "ZONAL"
   backup_enabled      = true
   retained_backups    = 7             # Match existing
@@ -175,8 +175,8 @@ module "cloud_run_api" {
   environment           = "production" # Keep as production to match existing state
   allowed_origins       = "https://thecuratedknot.com,https://admin.thecuratedknot.com"
 
-  cpu           = "1"
-  memory        = "512Mi"
+  cpu    = "1"
+  memory = "512Mi"
   # C6 connection budget — TERRAFORM OWNS THESE. The deploy workflow no
   # longer passes --min/--max-instances, so this is the single source of
   # truth. Before that fix TF said 20/1 and the workflow said 10/0, and the
@@ -310,8 +310,8 @@ module "cloud_run_worker" {
   min_instances = 1
   max_instances = 1
 
-  cpu    = "1"      # cpu_idle=false requires >= 1 vCPU
-  memory = "512Mi"  # Boots the full Nest DI container, same as the API
+  cpu    = "1"     # cpu_idle=false requires >= 1 vCPU
+  memory = "512Mi" # Boots the full Nest DI container, same as the API
 
   # Serves only /health; 80 is meaningless for a non-server.
   max_request_concurrency = 1

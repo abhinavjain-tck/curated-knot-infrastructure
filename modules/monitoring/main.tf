@@ -127,7 +127,12 @@ resource "google_monitoring_alert_policy" "worker_down" {
         "resource.type=\"uptime_url\"",
         "metric.label.check_id=\"${google_monitoring_uptime_check_config.worker.uptime_check_id}\"",
       ])
-      comparison      = "COMPARISON_LT"
+      # REDUCE_COUNT_FALSE counts the FAILING probes in the window, so the alert
+      # has to fire when that count rises ABOVE the threshold. COMPARISON_LT fired
+      # whenever fewer than one probe had failed — continuously while healthy, and
+      # never during the outage this exists to catch. GT with a threshold of 1 means
+      # two failing probes, so a single region hiccup does not page anyone.
+      comparison      = "COMPARISON_GT"
       threshold_value = 1
       duration        = "0s"
 
