@@ -309,10 +309,14 @@ module "user_uploads" {
 module "cloud_run_worker" {
   source = "../../modules/cloud-run"
 
-  project_id            = var.project_id
-  region                = var.region
-  service_name          = "${local.name_prefix}-comms-worker"
-  image                 = "${var.region}-docker.pkg.dev/${var.project_id}/${local.name_prefix}-images/${local.name_prefix}-api:main"
+  project_id   = var.project_id
+  region       = var.region
+  service_name = "${local.name_prefix}-comms-worker"
+  # Placeholder until the first worker deploy replaces it (C3), exactly as
+  # development does. The :main image has no dist/worker.js until the comms
+  # trunk reaches main, and a worker started on it crash-loops — with the DOWN
+  # alert now working, that pages whoever owns the alert address.
+  image                 = "gcr.io/cloudrun/hello"
   service_account_email = module.api_service_account.email
   vpc_connector_id      = module.networking.vpc_connector_id
   cloud_sql_connection  = module.cloud_sql.connection_name
