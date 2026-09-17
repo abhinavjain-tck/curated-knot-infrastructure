@@ -215,10 +215,17 @@ module "cloud_run_api" {
   # protected wedding sites, also fails closed) and the Slack webhooks.
   #
   secrets = {
-    DATABASE_URL                      = "database-url"
-    PRISMA_DATABASE_URL               = "prisma-database-url"
-    SENTRY_DSN                        = "sentry-dsn"
-    SLACK_WEBHOOK_COMMS_OPS           = "slack-webhook-comms-ops"
+    DATABASE_URL            = "database-url"
+    PRISMA_DATABASE_URL     = "prisma-database-url"
+    SENTRY_DSN              = "sentry-dsn"
+    SLACK_WEBHOOK_COMMS_OPS = "slack-webhook-comms-ops"
+    # The API's own comms code needs these: every send hashes the address with
+    # the pepper (fails closed without it), the sync send path calls Resend, and
+    # the webhook controller verifies signatures. They arrive with the comms
+    # trunk; the secrets already exist in both projects.
+    RESEND_API_KEY                    = "resend-api-key"
+    RESEND_WEBHOOK_SECRET             = "resend-webhook-secret"
+    COMMS_RECIPIENT_HASH_PEPPERS      = "comms-recipient-hash-peppers"
     API_JWT_SECRET                    = "api-jwt-secret"
     INTERNAL_API_SECRET               = "internal-api-secret"
     SITE_ACCESS_SECRET                = "site-access-secret"
