@@ -189,8 +189,16 @@ module "cloud_run_api" {
   min_instances = 0 # Scale to zero when idle (SAVES MONEY!)
 
   env_vars = {
-    GCS_BUCKET_NAME = module.user_uploads.name
-    GCS_PROJECT_ID  = var.project_id
+    # Without this the email module binds the STUB provider, which logs a send
+    # and returns SENT without ever calling Resend. The API makes the SYNC
+    # sends — password resets among them — so a staging reset reported success,
+    # logged status SENT in 328 ms, and no mail existed at the provider.
+    # The worker has carried these since it was created; the API never did.
+    EMAIL_PROVIDER     = "resend"
+    EMAIL_FROM_ADDRESS = "hello@send.thecuratedknot.com"
+    EMAIL_FROM_NAME    = "The Curated Knot"
+    GCS_BUCKET_NAME    = module.user_uploads.name
+    GCS_PROJECT_ID     = var.project_id
   }
 
   # ⚠️ This map and the app repo's `--set-secrets` list in
