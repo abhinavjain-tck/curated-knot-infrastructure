@@ -199,6 +199,10 @@ module "cloud_run_api" {
     EMAIL_FROM_NAME    = "The Curated Knot"
     GCS_BUCKET_NAME    = module.user_uploads.name
     GCS_PROJECT_ID     = var.project_id
+
+    # Origin the unsubscribe links in marketing email point at. Boot fails
+    # without it (assertCommsEnv).
+    COMMS_PUBLIC_BASE_URL = "https://develop.thecuratedknot.com"
   }
 
   # ⚠️ This map and the app repo's `--set-secrets` list in
@@ -232,6 +236,10 @@ module "cloud_run_api" {
     # develop's deploy workflow sets this; the comms trunk's copy does not, so
     # deploying that trunk would drop it. Tracked for the app repo, not here.
     SLACK_WEBHOOK_SUPPORT_TICKET = "slack-webhook-support-ticket"
+
+    # Signs one-click unsubscribe links; boot fails without it. Keep in step with
+    # the app repo's --set-secrets list, like every entry above.
+    COMMS_UNSUBSCRIBE_SIGNING_KEYS = "comms-unsubscribe-signing-keys"
   }
 
   depends_on = [
@@ -382,6 +390,10 @@ module "cloud_run_worker" {
     # StorageModule boots as part of AppModule.
     GCS_BUCKET_NAME = module.user_uploads.name
     GCS_PROJECT_ID  = var.project_id
+
+    # Origin the unsubscribe links in marketing email point at. Boot fails
+    # without it (assertCommsEnv).
+    COMMS_PUBLIC_BASE_URL = "https://develop.thecuratedknot.com"
   }
 
   # Names only — values live in Secret Manager, created out of band.
@@ -396,6 +408,10 @@ module "cloud_run_worker" {
     RESEND_WEBHOOK_SECRET        = "resend-webhook-secret"
     COMMS_RECIPIENT_HASH_PEPPERS = "comms-recipient-hash-peppers"
     SLACK_WEBHOOK_COMMS_OPS      = "slack-webhook-comms-ops"
+
+    # Signs the one-click unsubscribe links the worker puts in marketing email;
+    # boot fails without it.
+    COMMS_UNSUBSCRIBE_SIGNING_KEYS = "comms-unsubscribe-signing-keys"
   }
 
   depends_on = [
