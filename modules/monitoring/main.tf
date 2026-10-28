@@ -214,9 +214,14 @@ resource "google_monitoring_alert_policy" "worker_paralysed" {
       filter   = "metric.type=\"logging.googleapis.com/user/${google_logging_metric.reconcile_runs.name}\" AND resource.type=\"cloud_run_revision\""
       duration = "${var.reconcile_silence_seconds}s"
 
+      # Sum across revisions, or every deploy pages: each revision is its own
+      # series, the retired one goes silent for good, and Monitoring then
+      # refuses to close the incident because its condition never clears.
       aggregations {
-        alignment_period   = "600s"
-        per_series_aligner = "ALIGN_COUNT"
+        alignment_period     = "600s"
+        per_series_aligner   = "ALIGN_COUNT"
+        cross_series_reducer = "REDUCE_SUM"
+        group_by_fields      = ["resource.label.service_name"]
       }
 
       trigger {
