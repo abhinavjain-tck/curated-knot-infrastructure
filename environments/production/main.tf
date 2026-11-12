@@ -162,6 +162,37 @@ resource "google_artifact_registry_repository" "images" {
 
   labels = {} # No labels currently (will add in future)
 
+  # Dry run: the policies below only LOG what they would delete (Cloud Logging, audit log for
+  # artifactregistry.googleapis.com). Nothing is removed until this is switched to false.
+  cleanup_policy_dry_run = true
+
+  # A KEEP match always beats a DELETE match, so the deployed image and the buildx cache stay.
+  cleanup_policies {
+    id     = "keep-recent-versions"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 30
+    }
+  }
+
+  cleanup_policies {
+    id     = "keep-buildcache"
+    action = "KEEP"
+    condition {
+      tag_state    = "TAGGED"
+      tag_prefixes = ["production-buildcache"]
+    }
+  }
+
+  # Cloud Run can only roll back to a recent revision, so older images are dead weight.
+  cleanup_policies {
+    id     = "delete-older-than-30-days"
+    action = "DELETE"
+    condition {
+      older_than = "2592000s"
+    }
+  }
+
   depends_on = [google_project_service.apis]
 }
 
