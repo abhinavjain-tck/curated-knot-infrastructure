@@ -184,7 +184,7 @@ resource "google_artifact_registry_repository" "images" {
     }
   }
 
-  # Cloud Run can only roll back to a recent revision, so older images are dead weight.
+  # 30 days is our rollback window; images older than that are dead weight.
   cleanup_policies {
     id     = "delete-older-than-30-days"
     action = "DELETE"
