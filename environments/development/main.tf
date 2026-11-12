@@ -163,9 +163,10 @@ resource "google_artifact_registry_repository" "images" {
 
   labels = local.labels
 
-  # Dry run: the policies below only LOG what they would delete (Cloud Logging, audit log for
-  # artifactregistry.googleapis.com). Nothing is removed until this is switched to false.
-  cleanup_policy_dry_run = true
+  # Live: the policies below delete what they match. The 2026-11-12 dry run (393 of 458 API
+  # versions, all older than 30 days) left the deployed image, the buildx cache and the
+  # children of kept multi-arch images alone.
+  cleanup_policy_dry_run = false
 
   # A KEEP match always beats a DELETE match, so the deployed image and the buildx cache stay.
   cleanup_policies {
