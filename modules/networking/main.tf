@@ -27,6 +27,16 @@ variable "vpc_connector_cidr" {
   default     = "10.8.0.0/28"
 }
 
+variable "create_vpc_connector" {
+  description = <<-EOT
+    Whether to create the Serverless VPC Access connector. It bills for two always-on
+    e2-micro VMs. An environment whose services do not need a private or fixed-IP
+    egress path (the development database accepts public connections) can turn it off.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "create_nat" {
   description = "Whether to create NAT gateway"
   type        = bool
@@ -47,11 +57,18 @@ variable "nat_log_filter" {
 
 # VPC Connector for Cloud Run
 resource "google_vpc_access_connector" "connector" {
+  count         = var.create_vpc_connector ? 1 : 0
   name          = "vpc-connector"
   project       = var.project_id
   region        = var.region
   network       = var.network
   ip_cidr_range = var.vpc_connector_cidr
+}
+
+# The connector gained a count; without this the existing one would be destroyed and recreated.
+moved {
+  from = google_vpc_access_connector.connector
+  to   = google_vpc_access_connector.connector[0]
 }
 
 # Static IP for NAT (for external service whitelisting)
@@ -92,12 +109,12 @@ resource "google_compute_router_nat" "nat" {
 
 output "vpc_connector_id" {
   description = "VPC connector ID"
-  value       = google_vpc_access_connector.connector.id
+  value       = one(google_vpc_access_connector.connector[*].id)
 }
 
 output "vpc_connector_name" {
   description = "VPC connector name"
-  value       = google_vpc_access_connector.connector.name
+  value       = one(google_vpc_access_connector.connector[*].name)
 }
 
 output "nat_ips" {

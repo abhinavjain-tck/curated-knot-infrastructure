@@ -118,8 +118,10 @@ module "networking" {
   name_prefix        = local.name_prefix
   network            = "default"
   vpc_connector_cidr = "10.9.0.0/28" # Different CIDR from production
-  create_nat         = true
-  nat_ip_count       = 1
+  # Development is used by one person to test before production. Its database accepts public
+  # connections, so the connector (two always-on VMs) and the NAT gateway + static IP buy nothing.
+  create_vpc_connector = false
+  create_nat           = false
 
   depends_on = [google_project_service.apis]
 }
