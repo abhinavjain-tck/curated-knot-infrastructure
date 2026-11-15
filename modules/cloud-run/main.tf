@@ -26,8 +26,9 @@ variable "service_account_email" {
 }
 
 variable "vpc_connector_id" {
-  description = "VPC connector ID for private networking"
+  description = "VPC connector ID for private networking. Null attaches no connector."
   type        = string
+  default     = null
 }
 
 variable "cloud_sql_connection" {
@@ -255,9 +256,12 @@ resource "google_cloud_run_v2_service" "api" {
       }
     }
 
-    vpc_access {
-      connector = var.vpc_connector_id
-      egress    = "ALL_TRAFFIC"
+    dynamic "vpc_access" {
+      for_each = var.vpc_connector_id == null ? [] : [var.vpc_connector_id]
+      content {
+        connector = vpc_access.value
+        egress    = "ALL_TRAFFIC"
+      }
     }
   }
 
