@@ -213,8 +213,11 @@ module "cloud_run_api" {
   environment           = "production" # Keep as production to match existing state
   allowed_origins       = "https://thecuratedknot.com,https://admin.thecuratedknot.com"
 
-  cpu    = "1"
-  memory = "512Mi"
+  cpu = "1"
+  # 1 GiB: photo processing (sharp, in confirmUpload) pushed 512 MiB over its
+  # limit 9 times in 14 days (Nov 2026); each kill made the next requests wait
+  # ~10 s for a new container. Develop stays at 512Mi: only the owner uses it.
+  memory = "1Gi"
   # C6 connection budget — TERRAFORM OWNS THESE. The deploy workflow no
   # longer passes --min/--max-instances, so this is the single source of
   # truth. Before that fix TF said 20/1 and the workflow said 10/0, and the
