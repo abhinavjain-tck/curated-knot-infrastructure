@@ -34,7 +34,7 @@ echo ""
 echo "=== Importing Networking ==="
 
 echo "Importing VPC connector..."
-terraform import 'module.networking.google_vpc_access_connector.connector' \
+terraform import 'module.networking.google_vpc_access_connector.connector[0]' \
   'projects/curated-knot-prod/locations/asia-south1/connectors/vpc-connector' || true
 
 echo "Importing NAT IP..."

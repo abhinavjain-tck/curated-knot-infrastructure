@@ -122,7 +122,6 @@ module "networking" {
   # connections, so the connector (two always-on VMs) and the NAT gateway + static IP buy nothing.
   create_vpc_connector = false
   create_nat           = false
-  nat_ip_count         = 1
 
   depends_on = [google_project_service.apis]
 }

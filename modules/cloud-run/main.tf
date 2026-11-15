@@ -26,9 +26,8 @@ variable "service_account_email" {
 }
 
 variable "vpc_connector_id" {
-  description = "VPC connector ID for private networking. Null attaches no connector."
+  description = "VPC connector ID for private networking. Required: pass null to attach none, so a forgotten argument is an error and not a silently lost connector."
   type        = string
-  default     = null
 }
 
 variable "cloud_sql_connection" {

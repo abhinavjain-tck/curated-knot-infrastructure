@@ -82,7 +82,7 @@ terraform import 'module.github_actions_service_account.google_service_account.a
   projects/curated-knot-prod/serviceAccounts/github-actions@curated-knot-prod.iam.gserviceaccount.com
 
 # Import networking
-terraform import 'module.networking.google_vpc_access_connector.connector' \
+terraform import 'module.networking.google_vpc_access_connector.connector[0]' \
   projects/curated-knot-prod/locations/asia-south1/connectors/vpc-connector
 
 terraform import 'module.networking.google_compute_address.nat_ip[0]' \

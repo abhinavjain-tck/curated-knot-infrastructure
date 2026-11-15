@@ -51,10 +51,10 @@ This environment creates:
 | Service Account | `github-actions-dev` for CI/CD |
 | Cloud Run | API service (scales to 0 when idle) |
 | Cloud SQL | PostgreSQL db-f1-micro |
-| VPC Connector | Cloud Run → Cloud SQL connectivity |
-| NAT Gateway | Outbound connections (for MongoDB Atlas) |
 | Artifact Registry | Docker image storage |
 | GCS Bucket | Static assets (90-day lifecycle) |
+
+There is deliberately no VPC connector, NAT gateway or static IP here: development is used by one person and its database accepts public connections, so they would only add cost. Production keeps its own.
 
 ## Cost Optimization
 
@@ -79,9 +79,6 @@ terraform output
 # Specific outputs for GitHub secrets
 terraform output github_actions_workload_identity_provider
 terraform output github_actions_service_account
-
-# NAT IP for MongoDB Atlas whitelisting
-terraform output nat_ips
 ```
 
 ## Importing Existing Resources

@@ -109,12 +109,12 @@ resource "google_compute_router_nat" "nat" {
 
 output "vpc_connector_id" {
   description = "VPC connector ID"
-  value       = var.create_vpc_connector ? google_vpc_access_connector.connector[0].id : null
+  value       = one(google_vpc_access_connector.connector[*].id)
 }
 
 output "vpc_connector_name" {
   description = "VPC connector name"
-  value       = var.create_vpc_connector ? google_vpc_access_connector.connector[0].name : null
+  value       = one(google_vpc_access_connector.connector[*].name)
 }
 
 output "nat_ips" {
