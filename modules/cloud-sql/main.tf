@@ -57,6 +57,12 @@ variable "retained_backups" {
   default     = 7
 }
 
+variable "point_in_time_recovery_enabled" {
+  description = "Point-in-time recovery from the transaction logs kept below. Needs backups on."
+  type        = bool
+  default     = false
+}
+
 variable "authorized_networks" {
   description = "List of authorized network CIDRs"
   type        = list(string)
@@ -109,6 +115,7 @@ resource "google_sql_database_instance" "main" {
     backup_configuration {
       enabled                        = var.backup_enabled
       start_time                     = var.backup_start_time
+      point_in_time_recovery_enabled = var.point_in_time_recovery_enabled
       transaction_log_retention_days = 7
 
       backup_retention_settings {

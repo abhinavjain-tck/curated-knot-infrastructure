@@ -145,9 +145,14 @@ module "cloud_sql" {
   disk_size           = 10 # Match existing
   availability_type   = "ZONAL"
   backup_enabled      = true
-  retained_backups    = 7             # Match existing
+  retained_backups    = 14            # ≥ 14 days before live payments (D50, TR-REL-050)
   authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
   labels              = {}            # No labels currently
+
+  # PITR from the 7 days of transaction logs the module keeps (D50, TR-REL-050).
+  # The tier stays shared-core at launch (D88 refines D50); apply this only after
+  # development shows PITR works on db-f1-micro.
+  point_in_time_recovery_enabled = true
 
   depends_on = [google_project_service.apis]
 }

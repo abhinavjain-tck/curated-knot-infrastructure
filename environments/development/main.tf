@@ -152,6 +152,10 @@ module "cloud_sql" {
   authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
   labels              = local.labels
 
+  # Tried here first: point-in-time recovery on a shared-core tier, before
+  # production turns it on (monetization D88).
+  point_in_time_recovery_enabled = true
+
   depends_on = [google_project_service.apis]
 }
 
