@@ -131,12 +131,16 @@ module "cloud_sql" {
   region           = var.region
   instance_name    = "${local.name_prefix}-db"
   database_version = "POSTGRES_15"
-  tier             = "db-f1-micro" # Match existing
+  # Dedicated core before live payments (monetization D50, TR-REL-050): the
+  # smallest dedicated tier, 1 vCPU and 3.75 GB. Shared-core tiers carry no
+  # Cloud SQL SLA. ⚠️ Changing the tier RESTARTS the instance (a few minutes
+  # of downtime): apply in a quiet hour.
+  tier = "db-custom-1-3840"
 
   # C6: the default on a shared-core instance is 25, and the budget does not
   # close at 25 — API (max_instances x Prisma pool) + worker (Prisma + pg-boss)
   # + the superuser reserve already exceeds it, before apps/web's own
-  # serverless draw. 50 leaves real headroom on 0.6 GB of RAM.
+  # serverless draw. Kept at 50 on the dedicated tier: the budget below is 23.
   #
   # ⚠️ Changing this RESTARTS the instance. Apply it deliberately.
   database_flags = {
@@ -145,9 +149,12 @@ module "cloud_sql" {
   disk_size           = 10 # Match existing
   availability_type   = "ZONAL"
   backup_enabled      = true
-  retained_backups    = 7             # Match existing
+  retained_backups    = 14            # ≥ 14 days before live payments (D50, TR-REL-050)
   authorized_networks = ["0.0.0.0/0"] # Open for Vercel serverless access (see docs/05-security/database-security.md)
   labels              = {}            # No labels currently
+
+  # PITR from the 7 days of transaction logs the module keeps (D50, TR-REL-050).
+  point_in_time_recovery_enabled = true
 
   depends_on = [google_project_service.apis]
 }
