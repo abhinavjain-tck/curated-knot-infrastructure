@@ -131,16 +131,12 @@ module "cloud_sql" {
   region           = var.region
   instance_name    = "${local.name_prefix}-db"
   database_version = "POSTGRES_15"
-  # Dedicated core before live payments (monetization D50, TR-REL-050): the
-  # smallest dedicated tier, 1 vCPU and 3.75 GB. Shared-core tiers carry no
-  # Cloud SQL SLA. ⚠️ Changing the tier RESTARTS the instance (a few minutes
-  # of downtime): apply in a quiet hour.
-  tier = "db-custom-1-3840"
+  tier             = "db-f1-micro" # Match existing
 
   # C6: the default on a shared-core instance is 25, and the budget does not
   # close at 25 — API (max_instances x Prisma pool) + worker (Prisma + pg-boss)
   # + the superuser reserve already exceeds it, before apps/web's own
-  # serverless draw. Kept at 50 on the dedicated tier: the budget below is 23.
+  # serverless draw. 50 leaves real headroom on 0.6 GB of RAM.
   #
   # ⚠️ Changing this RESTARTS the instance. Apply it deliberately.
   database_flags = {
@@ -154,6 +150,8 @@ module "cloud_sql" {
   labels              = {}            # No labels currently
 
   # PITR from the 7 days of transaction logs the module keeps (D50, TR-REL-050).
+  # The tier stays shared-core at launch (D88 refines D50); apply this only after
+  # development shows PITR works on db-f1-micro.
   point_in_time_recovery_enabled = true
 
   depends_on = [google_project_service.apis]
